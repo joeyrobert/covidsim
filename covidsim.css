@@ -1,0 +1,13 @@
+#covidsim {
+  height: auto;
+  width: 100%;
+  border: 3px solid #ccc;
+}
+
+body {
+  font-size: 0.7rem;
+}
+
+.form-control {
+  font-size: 0.7rem;
+}

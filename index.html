@@ -1,0 +1,80 @@
+<!DOCTYPE html>
+<html>
+  <head>
+    <title>COVIDSIM</title>
+    <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <link rel="stylesheet" href="/covidsim.css">
+  </head>
+  <body>
+    <div class="container">
+      <div class="row">
+        <div class="col-9">
+          <canvas id="covidsim" height="800" width="800"></canvas>
+        </div>
+        <div class="col-3">
+          <form>
+            <div class="form-group">
+              <label for="population">Population</label>
+              <input type="number" class="form-control" id="population" value="250">
+              <small class="form-text text-muted">Total number of people</small>
+            </div>
+            <div class="form-group">
+              <label for="outings-per-day">Outings per day</label>
+              <input type="number" class="form-control" id="outings-per-day" value="0.3">
+              <small class="form-text text-muted">How often people go to a public place</small>
+            </div>
+            <div class="form-group">
+              <label for="outing-distance">Outing distance</label>
+              <input type="number" class="form-control" id="outing-distance" value="100">
+              <small class="form-text text-muted">How far is your random walk?</small>
+            </div>
+            <div class="form-group">
+              <label for="infection-distance">Infection distance</label>
+              <input type="number" class="form-control" id="infection-distance" value="1">
+              <small class="form-text text-muted">How close to do you need to be to catch the disease?</small>
+            </div>
+            <div class="form-group">
+              <label for="area-per-person">Area per person</label>
+              <input type="number" class="form-control" id="area-per-person" value="200">
+              <small class="form-text text-muted">Amount of square area per person, defines map size</small>
+            </div>
+            <div class="form-group">
+              <label for="initial-infected">Initial infected</label>
+              <input type="number" class="form-control" id="initial-infected" value="10">
+              <small class="form-text text-muted">Number of people infected at the start</small>
+            </div>
+            <div class="form-group">
+              <label for="vulnerable-death-rate">Vulnerable death rate</label>
+              <input type="number" class="form-control" id="vulnerable-death-rate" value="0.3">
+              <small class="form-text text-muted">Death rate of the vulnerable population</small>
+            </div>
+            <div class="form-group">
+              <label for="non-vulnerable-death-rate">Non-vulnerable death rate</label>
+              <input type="number" class="form-control" id="non-vulnerable-death-rate" value="0.005">
+              <small class="form-text text-muted">Death rate of the non-vulnerable population</small>
+            </div>
+            <div class="form-group">
+              <label for="vulnerable-population">Vulnerable population</label>
+              <input type="number" class="form-control" id="vulnerable-population" value="0.3">
+              <small class="form-text text-muted">Ratio of vulnerable people to non-vulnerable people</small>
+            </div>
+            <div class="form-group">
+              <label for="incubation-period">Incubation period</label>
+              <input type="number" class="form-control" id="incubation-period" value="4">
+              <small class="form-text text-muted">Initial days with virus while asymptomatic</small>
+            </div>
+            <div class="form-group">
+              <label for="symptomatic-period">Symptomatic period</label>
+              <input type="number" class="form-control" id="symptomatic-period" value="14">
+              <small class="form-text text-muted">Days with virus while symptomatic</small>
+            </div>
+            <button type="submit" class="btn btn-primary" onClick="covidSetup(event)">Setup</button>
+            <button type="submit" class="btn btn-secondary" onClick="covidStep(event)">Step</button>
+            <button type="submit" class="btn btn-success">Play</button>
+          </form>
+        </div>
+      </div>
+    </div>
+    <script src="covidsim.js"></script>
+  </body>
+</html>
