@@ -11,3 +11,22 @@ body {
 .form-control {
   font-size: 0.7rem;
 }
+
+.dead-color {
+  color: #000000;
+}
+.asymptomatic-color {
+  color: #FF0000;
+}
+.symptomatic-color {
+  color: #8B0000;
+}
+.recovered-color {
+  color: #4B0082;
+}
+.non-vulnerable-color {
+  color: #00FF00;
+}
+.vulnerable-color {
+  color: #006400;
+}
