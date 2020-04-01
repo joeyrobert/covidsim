@@ -1,7 +1,11 @@
-#covidsim {
+#covidsim, #covidsim-graph {
   height: auto;
   width: 100%;
   border: 3px solid #ccc;
+}
+
+#stats {
+  margin-bottom: 4px;
 }
 
 body {

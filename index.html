@@ -3,6 +3,7 @@
   <head>
     <title>COVIDSIM</title>
     <link rel="stylesheet" href="https://stackpath.bootstrapcdn.com/bootstrap/4.4.1/css/bootstrap.min.css" integrity="sha384-Vkoo8x4CGsO3+Hhxv8T/Q5PaXtkKtu6ug5TOeNV6gBiFeWPGFN9MuhOf23Q9Ifjh" crossorigin="anonymous">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@2.9.3/dist/Chart.min.js" integrity="sha256-R4pqcOYV8lt7snxMQO/HSbVCFRPMdrhAFMH+vr9giYI=" crossorigin="anonymous"></script>
     <link rel="stylesheet" href="/covidsim.css">
   </head>
   <body>
@@ -20,13 +21,16 @@
       <div class="row">
         <div class="col-9">
           <canvas id="covidsim" height="600" width="800"></canvas>
-          Time: <strong><span id="time-total">0</span> days</strong>,
-          Non-Vulnerable: <strong class="non-vulnerable-color"><span id="non-vulnerable-total">0</span></strong>,
-          Vulnerable: <strong class="vulnerable-color"><span id="vulnerable-total">0</span></strong>,
-          Asymptomatic: <strong class="asymptomatic-color"><span id="asymptomatic-total">0</span></strong>,
-          Symptomatic: <strong class="symptomatic-color"><span id="symptomatic-total">0</span></strong>,
-          Recovered: <strong class="recovered-color"><span id="recovered-total">0</span></strong>,
-          Dead: <strong class="dead-color"><span id="dead-total">0</span></strong>
+          <div id="stats">
+            Time: <strong><span id="time-total">0</span> days</strong>,
+            Non-Vulnerable: <strong class="non-vulnerable-color"><span id="non-vulnerable-total">0</span></strong>,
+            Vulnerable: <strong class="vulnerable-color"><span id="vulnerable-total">0</span></strong>,
+            Asymptomatic: <strong class="asymptomatic-color"><span id="asymptomatic-total">0</span></strong>,
+            Symptomatic: <strong class="symptomatic-color"><span id="symptomatic-total">0</span></strong>,
+            Recovered: <strong class="recovered-color"><span id="recovered-total">0</span></strong>,
+            Dead: <strong class="dead-color"><span id="dead-total">0</span></strong>
+          </div>
+          <canvas id="covidsim-graph" height="150" width="800"></canvas>
         </div>
         <div class="col-3">
           <form>

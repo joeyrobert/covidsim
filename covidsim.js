@@ -48,6 +48,8 @@ function getDistance(x0, y0, x1, y1) {
   return Math.sqrt(Math.pow(x0 - x1, 2) + Math.pow(y0 - y1, 2));
 }
 
+
+
 class CovidSimulator {
   constructor(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod) {
     this.time = 0;
@@ -67,6 +69,7 @@ class CovidSimulator {
     this.canvasWidth = this.canvas.width;
     this.canvasHeight = this.canvas.height;
     this.ctx = this.canvas.getContext('2d');
+    this.setupGraph();
 
     // Stats elements
     this.timeTotal = document.getElementById('time-total');
@@ -105,6 +108,82 @@ class CovidSimulator {
         this.symptomaticPeriod,
       ));
     }
+  }
+
+  setupGraph() {
+    const graphConfig = {
+      type: 'line',
+      data: {
+        datasets: [
+          {
+            label: 'Non-Vulnerable',
+            borderColor: NON_VULNERABLE_COLOR,
+            backgroundColor: NON_VULNERABLE_COLOR,
+            data: [],
+          },
+          {
+            label: 'Vulnerable',
+            borderColor: VULNERABLE_COLOR,
+            backgroundColor: VULNERABLE_COLOR,
+            data: [],
+          },
+          {
+            label: 'Asymptomatic',
+            borderColor: ASYMPTOMATIC_COLOR,
+            backgroundColor: ASYMPTOMATIC_COLOR,
+            data: [],
+          },
+          {
+            label: 'Symptomatic',
+            borderColor: SYMPTOMATIC_COLOR,
+            backgroundColor: SYMPTOMATIC_COLOR,
+            data: [],
+          },
+          {
+            label: 'Recovered',
+            borderColor: RECOVERED_COLOR,
+            backgroundColor: RECOVERED_COLOR,
+            data: [],
+          },
+          {
+            label: 'Dead',
+            borderColor: DEAD_COLOR,
+            backgroundColor: DEAD_COLOR,
+            data: [],
+          },
+        ]
+      },
+      options: {
+        responsive: true,
+        title: {
+          display: false,
+        },
+        legend: {
+          display: false
+        },
+        scales: {
+          xAxes: [
+            {
+              scaleLabel: {
+                display: false,
+                labelString: 'Time (days)'
+              }
+            }
+          ],
+          yAxes: [
+            {
+              stacked: true,
+              scaleLabel: {
+                display: false,
+                labelString: 'People'
+              }
+            }
+          ]
+        }
+      }
+    };
+    this.graphCtx = document.getElementById('covidsim-graph').getContext('2d');
+    this.graph = new Chart(this.graphCtx, graphConfig);
   }
 
   clear() {
@@ -167,7 +246,7 @@ class CovidSimulator {
       const infector = infectedPeople[i];
       for(var j = 0; j < nonInfectedPeople.length; j++) {
         const infectee = nonInfectedPeople[j];
-        const distance = getDistance(infector.x, infector.y, infectee.x, infectee.y);
+        const distance = getDistance(infector.x % this.sideLength, infector.y % this.sideLength, infectee.x % this.sideLength, infectee.y % this.sideLength);
         if (distance <= this.infectionDistance) {
           infectee.infected = true;
         }
@@ -185,23 +264,43 @@ class CovidSimulator {
     for(var i = 0; i < this.people.length; i++) {
       const person = this.people[i];
       this.ctx.beginPath();
-      this.ctx.arc(person.x * widthRatio, person.y * heightRatio, this.infectionDistance * widthRatio, 0, 2 * Math.PI);
+      this.ctx.arc((person.x % this.sideLength) * widthRatio, (person.y % this.sideLength) * heightRatio, this.infectionDistance * widthRatio, 0, 2 * Math.PI);
       this.ctx.fillStyle = person.fillStyle();
       this.ctx.fill();
     }
   }
 
   drawStats() {
-    this.timeTotal.innerHTML = (this.time / SECONDS_IN_DAY).toFixed(3);
+    const time = this.time / SECONDS_IN_DAY;
+    this.timeTotal.innerHTML = time.toFixed(3);
     const grouped = groupByFunc(this.people, 'fillStyle');
-    this.nonVulnerableTotal.innerHTML = (grouped[NON_VULNERABLE_COLOR] || []).length;
-    this.vulnerableTotal.innerHTML = (grouped[VULNERABLE_COLOR] || []).length;
-    this.asymptomaticTotal.innerHTML = (grouped[ASYMPTOMATIC_COLOR] || []).length;
-    this.symptomaticTotal.innerHTML = (grouped[SYMPTOMATIC_COLOR] || []).length;
-    this.recoveredTotal.innerHTML = (grouped[RECOVERED_COLOR] || []).length;
-    this.deadTotal.innerHTML = (grouped[DEAD_COLOR] || []).length;
+    const stats = [
+      (grouped[NON_VULNERABLE_COLOR] || []).length,
+      (grouped[VULNERABLE_COLOR] || []).length,
+      (grouped[ASYMPTOMATIC_COLOR] || []).length,
+      (grouped[SYMPTOMATIC_COLOR] || []).length,
+      (grouped[RECOVERED_COLOR] || []).length,
+      (grouped[DEAD_COLOR] || []).length,
+    ];
+
+    this.nonVulnerableTotal.innerHTML = stats[0];
+    this.vulnerableTotal.innerHTML = stats[1];
+    this.asymptomaticTotal.innerHTML = stats[2];
+    this.symptomaticTotal.innerHTML = stats[3];
+    this.recoveredTotal.innerHTML = stats[4];
+    this.deadTotal.innerHTML = stats[5];
+
+    this.graph.data.datasets.forEach((dataset, i) => {
+      dataset.data.push({x: time, y: stats[i]});
+    });
+
+    console.log(this.graph.data.datasets);
+
+    this.graph.update();
   }
 }
+
+
 
 class CovidPerson {
   constructor(x, y, vulnerable, infected, incubationPeriod, symptomaticPeriod, infectionDay=0, recovered=false, dead=false, walking=false, walkTarget=[0, 0]) {
@@ -288,12 +387,14 @@ function covidSetup(event) {
   const symptomaticPeriod = parseInt(document.getElementById('symptomatic-period').value);
   window.sim = new CovidSimulator(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod);
   window.sim.draw();
+  window.sim.drawStats();
   event.preventDefault();
 }
 
 function covidStep(event) {
   window.sim.step(STEP_DELTA);
   window.sim.draw();
+  window.sim.drawStats();
   event.preventDefault();
 }
 
