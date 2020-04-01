@@ -1,0 +1,7 @@
+TODO:
+[ ] Play / stop button
+[ ] Disable model variables while simulation is running
+[ ] Save model parameters via URL
+[ ] Bounding box
+[ ] Additional parameters: simulation speed, person speed, step size
+[ ] Optimize step function

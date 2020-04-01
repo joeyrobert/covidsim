@@ -124,8 +124,6 @@ class CovidSimulator {
     const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
     const nonWalkingPeople = this.people.filter(person => !person.walking);
 
-    console.log(vulnerableDeathProbability, nonVulnerableDeathProbability)
-
     // Start people walking
     nonWalkingPeople.forEach(person => {
       const startWalking = getRandomCoinFlip(walkProbability);
