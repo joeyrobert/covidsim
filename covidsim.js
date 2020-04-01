@@ -87,7 +87,7 @@ class CovidSimulator {
     this.sideLength = Math.sqrt(this.area);
     const nonInfected = this.population - this.initialInfected;
 
-    for(var i = 0; i < nonInfected; i++) {
+    for (var i = 0; i < nonInfected; i++) {
       this.people.push(new CovidPerson(
         getRandomArbitrary(0, this.sideLength),
         getRandomArbitrary(0, this.sideLength),
@@ -98,7 +98,7 @@ class CovidSimulator {
       ));
     }
 
-    for(var i = 0; i < this.initialInfected; i++) {
+    for (var i = 0; i < this.initialInfected; i++) {
       this.people.push(new CovidPerson(
         getRandomArbitrary(0, this.sideLength),
         getRandomArbitrary(0, this.sideLength),
@@ -112,7 +112,7 @@ class CovidSimulator {
 
   setupGraph() {
     const graphConfig = {
-      type: 'line',
+      type: 'scatter',
       data: {
         datasets: [
           {
@@ -120,36 +120,54 @@ class CovidSimulator {
             borderColor: NON_VULNERABLE_COLOR,
             backgroundColor: NON_VULNERABLE_COLOR,
             data: [],
+            showLine: true,
+            fill: false,
+            pointRadius: 0,
           },
           {
             label: 'Vulnerable',
             borderColor: VULNERABLE_COLOR,
             backgroundColor: VULNERABLE_COLOR,
             data: [],
+            showLine: true,
+            fill: false,
+            pointRadius: 0,
           },
           {
             label: 'Asymptomatic',
             borderColor: ASYMPTOMATIC_COLOR,
             backgroundColor: ASYMPTOMATIC_COLOR,
             data: [],
+            showLine: true,
+            fill: false,
+            pointRadius: 0,
           },
           {
             label: 'Symptomatic',
             borderColor: SYMPTOMATIC_COLOR,
             backgroundColor: SYMPTOMATIC_COLOR,
             data: [],
+            showLine: true,
+            fill: false,
+            pointRadius: 0,
           },
           {
             label: 'Recovered',
             borderColor: RECOVERED_COLOR,
             backgroundColor: RECOVERED_COLOR,
             data: [],
+            showLine: true,
+            fill: false,
+            pointRadius: 0,
           },
           {
             label: 'Dead',
             borderColor: DEAD_COLOR,
             backgroundColor: DEAD_COLOR,
             data: [],
+            showLine: true,
+            fill: false,
+            pointRadius: 0,
           },
         ]
       },
@@ -172,7 +190,6 @@ class CovidSimulator {
           ],
           yAxes: [
             {
-              stacked: true,
               scaleLabel: {
                 display: false,
                 labelString: 'People'
@@ -242,9 +259,9 @@ class CovidSimulator {
     const nonInfectedPeople = this.people.filter(person => !person.infected);
 
     // Detect all collisions and new infections!
-    for(var i = 0; i < infectedPeople.length; i++) {
+    for (var i = 0; i < infectedPeople.length; i++) {
       const infector = infectedPeople[i];
-      for(var j = 0; j < nonInfectedPeople.length; j++) {
+      for (var j = 0; j < nonInfectedPeople.length; j++) {
         const infectee = nonInfectedPeople[j];
         const distance = getDistance(infector.x % this.sideLength, infector.y % this.sideLength, infectee.x % this.sideLength, infectee.y % this.sideLength);
         if (distance <= this.infectionDistance) {
@@ -261,7 +278,7 @@ class CovidSimulator {
     const heightRatio = this.canvasHeight / this.sideLength;
     const widthRatio = this.canvasWidth / this.sideLength;
 
-    for(var i = 0; i < this.people.length; i++) {
+    for (var i = 0; i < this.people.length; i++) {
       const person = this.people[i];
       this.ctx.beginPath();
       this.ctx.arc((person.x % this.sideLength) * widthRatio, (person.y % this.sideLength) * heightRatio, this.infectionDistance * widthRatio, 0, 2 * Math.PI);
@@ -294,9 +311,7 @@ class CovidSimulator {
       dataset.data.push({x: time, y: stats[i]});
     });
 
-    console.log(this.graph.data.datasets);
-
-    this.graph.update();
+    this.graph.update(0);
   }
 }
 
@@ -373,6 +388,23 @@ class CovidPerson {
   }
 }
 
+const BUTTONS = {
+  setup: document.getElementById('setup-button'),
+  step: document.getElementById('step-button'),
+  play: document.querySelectorAll('.play-button'),
+  stop: document.getElementById('stop-button'),
+};
+
+function setDisabled(key, value) {
+  if (BUTTONS[key].length) {
+    for (var i = 0; i < BUTTONS[key].length; i++) {
+      BUTTONS[key][i].disabled = value;
+    }
+  } else {
+    BUTTONS[key].disabled = value;
+  }
+}
+
 function covidSetup(event) {
   const population = parseInt(document.getElementById('population').value, 10);
   const walksPerDay = parseFloat(document.getElementById('walks-per-day').value);
@@ -388,6 +420,13 @@ function covidSetup(event) {
   window.sim = new CovidSimulator(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod);
   window.sim.draw();
   window.sim.drawStats();
+
+  // Enable play/step buttons
+  setDisabled('stop', true);
+  setDisabled('step', false);
+  setDisabled('setup', false);
+  setDisabled('play', false);
+
   event.preventDefault();
 }
 
@@ -398,15 +437,36 @@ function covidStep(event) {
   event.preventDefault();
 }
 
-function covidPlay(event) {
-  setInterval(() => {
-    for(var i = 0; i < 50; i++) {
+function covidStop(event) {
+  clearInterval(window.playInterval);
+  clearInterval(window.statInterval);
+
+  // Enable play/step/setup buttons
+  setDisabled('stop', true);
+  setDisabled('step', false);
+  setDisabled('setup', false);
+  setDisabled('play', false);
+
+  event.preventDefault();
+}
+
+function covidPlay(event, speed) {
+  covidStop(event);
+  window.playInterval = setInterval(() => {
+    for (var i = 0; i < speed; i++) {
       window.sim.step(STEP_DELTA);
     }
     window.sim.draw();
   }, 0);
-  setInterval(() => {
+  window.statInterval = setInterval(() => {
     window.sim.drawStats();
   }, 250);
+
+  // Enable stop button, disable setup button
+  setDisabled('stop', false);
+  setDisabled('setup', true);
+  setDisabled('step', true);
+  setDisabled('play', false);
+
   event.preventDefault();
 }
