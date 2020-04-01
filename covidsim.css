@@ -8,6 +8,10 @@ body {
   font-size: 0.7rem;
 }
 
+h1 {
+  float: left;
+}
+
 .form-control {
   font-size: 0.7rem;
 }

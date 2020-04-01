@@ -8,13 +8,24 @@
   <body>
     <div class="container">
       <div class="row">
+        <div class="col-12">
+          <h1>COVIDSIM</h1>
+          <div class="float-right" style="line-height: 56px;">
+            <button type="submit" class="btn btn-primary" onClick="covidSetup(event)">Setup</button>
+            <button type="submit" class="btn btn-secondary" onClick="covidStep(event)">Step</button>
+            <button type="submit" class="btn btn-success" onClick="covidPlay(event)">Play</button>
+          </div>
+        </div>
+      </div>
+      <div class="row">
         <div class="col-9">
-          <canvas id="covidsim" height="800" width="800"></canvas>
+          <canvas id="covidsim" height="600" width="800"></canvas>
           Time: <strong><span id="time-total">0</span> days</strong>,
           Non-Vulnerable: <strong class="non-vulnerable-color"><span id="non-vulnerable-total">0</span></strong>,
           Vulnerable: <strong class="vulnerable-color"><span id="vulnerable-total">0</span></strong>,
           Asymptomatic: <strong class="asymptomatic-color"><span id="asymptomatic-total">0</span></strong>,
           Symptomatic: <strong class="symptomatic-color"><span id="symptomatic-total">0</span></strong>,
+          Recovered: <strong class="recovered-color"><span id="recovered-total">0</span></strong>,
           Dead: <strong class="dead-color"><span id="dead-total">0</span></strong>
         </div>
         <div class="col-3">
@@ -25,14 +36,14 @@
               <small class="form-text text-muted">Total number of people</small>
             </div>
             <div class="form-group">
-              <label for="outings-per-day">Outings per day</label>
-              <input type="number" class="form-control" id="outings-per-day" value="0.3">
-              <small class="form-text text-muted">How often people go to a public place</small>
+              <label for="walks-per-day">Walks per day</label>
+              <input type="number" class="form-control" id="walks-per-day" value="0.5">
+              <small class="form-text text-muted">How often does each person travel travel?</small>
             </div>
             <div class="form-group">
-              <label for="outing-distance">Outing distance</label>
-              <input type="number" class="form-control" id="outing-distance" value="100">
-              <small class="form-text text-muted">How far is your random walk?</small>
+              <label for="walk-distance">Walk distance</label>
+              <input type="number" class="form-control" id="walk-distance" value="100">
+              <small class="form-text text-muted">How far is each person's walk?</small>
             </div>
             <div class="form-group">
               <label for="infection-distance">Infection distance</label>
@@ -74,9 +85,6 @@
               <input type="number" class="form-control" id="symptomatic-period" value="14">
               <small class="form-text text-muted">Days with virus while symptomatic</small>
             </div>
-            <button type="submit" class="btn btn-primary" onClick="covidSetup(event)">Setup</button>
-            <button type="submit" class="btn btn-secondary" onClick="covidStep(event)">Step</button>
-            <button type="submit" class="btn btn-success">Play</button>
           </form>
         </div>
       </div>

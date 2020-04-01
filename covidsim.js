@@ -4,6 +4,10 @@ const SYMPTOMATIC_COLOR = '#8B0000';
 const RECOVERED_COLOR = '#4B0082';
 const NON_VULNERABLE_COLOR = '#00FF00';
 const VULNERABLE_COLOR = '#006400';
+const PERSON_SPEED = 0.01;
+const WALK_TARGET_THRESHOLD = 0.01;
+const STEP_DELTA = 2;
+const SECONDS_IN_DAY = 86400;
 
 function getRandomInt(min, max) {
   min = Math.ceil(min);
@@ -26,12 +30,30 @@ function getRandomWalkTarget(x, y, radius) {
   return [newX, newY];
 }
 
+function groupByKey(xs, key) {
+  return xs.reduce(function(rv, x) {
+    (rv[x[key]] = rv[x[key]] || []).push(x);
+    return rv;
+  }, {});
+}
+
+function groupByFunc(xs, key) {
+  return xs.reduce(function(rv, x) {
+    (rv[x[key]()] = rv[x[key]()] || []).push(x);
+    return rv;
+  }, {});
+}
+
+function getDistance(x0, y0, x1, y1) {
+  return Math.sqrt(Math.pow(x0 - x1, 2) + Math.pow(y0 - y1, 2));
+}
+
 class CovidSimulator {
-  constructor(population, outingsPerDay, outingDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod) {
+  constructor(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod) {
     this.time = 0;
     this.population = population;
-    this.outingsPerDay = outingsPerDay;
-    this.outingDistance = outingDistance;
+    this.walksPerDay = walksPerDay;
+    this.walkDistance = walkDistance;
     this.infectionDistance = infectionDistance;
     this.areaPerPerson = areaPerPerson;
     this.initialInfected = initialInfected;
@@ -52,6 +74,7 @@ class CovidSimulator {
     this.vulnerableTotal = document.getElementById('vulnerable-total');
     this.asymptomaticTotal = document.getElementById('asymptomatic-total');
     this.symptomaticTotal = document.getElementById('symptomatic-total');
+    this.recoveredTotal = document.getElementById('recovered-total');
     this.deadTotal = document.getElementById('dead-total');
   }
 
@@ -88,27 +111,72 @@ class CovidSimulator {
     this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
   }
 
-  step() {
+  step(timeDelta) {
     // hardcoded assumptions
-    // time delta = 1 hour
     // speed = 10 / hour
     // do infected people walk? => eventual boolean
     // people die in their symptomatic state
-
+    // time and timeDelta are unit = seconds
 
     // Get people to walk
-    const outingsPerDelta = this.outingsPerDay / 24;
+    const walkProbability = this.walksPerDay * timeDelta / SECONDS_IN_DAY;
+    const vulnerableDeathProbability = this.vulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
+    const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
+    const nonWalkingPeople = this.people.filter(person => !person.walking);
 
-    for(var i = 0; i < this.people.length; i++) {
-      const person = this.people[i];
+    console.log(vulnerableDeathProbability, nonVulnerableDeathProbability)
 
-      if (!person.walking) {
+    // Start people walking
+    nonWalkingPeople.forEach(person => {
+      const startWalking = getRandomCoinFlip(walkProbability);
+      if (startWalking) {
+        person.walking = true;
+        person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
+      }
+    });
 
+    const walkingPeople = this.people.filter(person => person.walking);
+
+    // Step people's walk
+    walkingPeople.forEach(person => {
+      person.walk(timeDelta);
+    });
+
+    // Advance all infected people's status
+    const infectedPeople = this.people.filter(person => person.infected);
+    infectedPeople.forEach(person => {
+      person.infectionDay += timeDelta / SECONDS_IN_DAY;
+
+      if (person.infectionDay > (this.incubationPeriod + this.symptomaticPeriod)) {
+        // person has recovered
+        person.infected = false;
+        person.recovered = true;
+      } else if (person.infectionDay > this.incubationPeriod) {
+        // person is symptomatic, they might die
+        const dead = getRandomCoinFlip(person.vulnerable ? vulnerableDeathProbability : nonVulnerableDeathProbability);
+        if (dead) {
+          person.dead = true;
+          person.walking = false;
+          person.infected = false;
+        }
+      }
+    });
+
+    const nonInfectedPeople = this.people.filter(person => !person.infected);
+
+    // Detect all collisions and new infections!
+    for(var i = 0; i < infectedPeople.length; i++) {
+      const infector = infectedPeople[i];
+      for(var j = 0; j < nonInfectedPeople.length; j++) {
+        const infectee = nonInfectedPeople[j];
+        const distance = getDistance(infector.x, infector.y, infectee.x, infectee.y);
+        if (distance <= this.infectionDistance) {
+          infectee.infected = true;
+        }
       }
     }
 
-
-    // Detect all collisions and new infections!
+    this.time += timeDelta;
   }
 
   draw() {
@@ -123,17 +191,16 @@ class CovidSimulator {
       this.ctx.fillStyle = person.fillStyle();
       this.ctx.fill();
     }
-
-    this.drawStats();
   }
 
   drawStats() {
-    this.timeTotal.innerHTML = this.time;
+    this.timeTotal.innerHTML = (this.time / SECONDS_IN_DAY).toFixed(3);
     const grouped = groupByFunc(this.people, 'fillStyle');
     this.nonVulnerableTotal.innerHTML = (grouped[NON_VULNERABLE_COLOR] || []).length;
     this.vulnerableTotal.innerHTML = (grouped[VULNERABLE_COLOR] || []).length;
     this.asymptomaticTotal.innerHTML = (grouped[ASYMPTOMATIC_COLOR] || []).length;
     this.symptomaticTotal.innerHTML = (grouped[SYMPTOMATIC_COLOR] || []).length;
+    this.recoveredTotal.innerHTML = (grouped[RECOVERED_COLOR] || []).length;
     this.deadTotal.innerHTML = (grouped[DEAD_COLOR] || []).length;
   }
 }
@@ -171,12 +238,48 @@ class CovidPerson {
 
     return NON_VULNERABLE_COLOR;
   }
+
+  walk(timeDelta) {
+    // walk towards target using straight line
+    if (!this.walking) return;
+    const totalVector = [
+      (this.walkTarget[0] - this.x),
+      (this.walkTarget[1] - this.y),
+    ];
+
+    const magnitude = Math.sqrt(Math.pow(totalVector[0], 2) + Math.pow(totalVector[1], 2));
+    // This stops the person from walking when they reach their target
+    if (magnitude <= WALK_TARGET_THRESHOLD) {
+      this.walking = false;
+      return;
+    }
+
+    const unitVector = [
+      totalVector[0] / magnitude,
+      totalVector[1] / magnitude,
+    ];
+    const deltaVector = [
+      unitVector[0] * PERSON_SPEED * timeDelta,
+      unitVector[1] * PERSON_SPEED * timeDelta,
+    ];
+
+    if (Math.abs(deltaVector[0]) > Math.abs(totalVector[0])) {
+      deltaVector[0] = totalVector[0];
+    }
+
+    if (Math.abs(deltaVector[1]) > Math.abs(totalVector[1])) {
+      deltaVector[1] = totalVector[1];
+    }
+
+    this.x += deltaVector[0];
+    this.y += deltaVector[1];
+  }
 }
 
 function covidSetup(event) {
   const population = parseInt(document.getElementById('population').value, 10);
-  const outingsPerDay = parseFloat(document.getElementById('outings-per-day').value);
-  const outingDistance = parseFloat(document.getElementById('outing-distance').value);
+  const walksPerDay = parseFloat(document.getElementById('walks-per-day').value);
+  const walkDistance = parseFloat(document.getElementById('walk-distance').value);
   const infectionDistance = parseFloat(document.getElementById('infection-distance').value);
   const areaPerPerson = parseFloat(document.getElementById('area-per-person').value);
   const initialInfected = parseInt(document.getElementById('initial-infected').value, 10);
@@ -185,30 +288,26 @@ function covidSetup(event) {
   const vulnerablePopulation = parseFloat(document.getElementById('vulnerable-population').value);
   const incubationPeriod = parseInt(document.getElementById('incubation-period').value);
   const symptomaticPeriod = parseInt(document.getElementById('symptomatic-period').value);
-  window.sim = new CovidSimulator(population, outingsPerDay, outingDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod);
+  window.sim = new CovidSimulator(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod);
   window.sim.draw();
   event.preventDefault();
-  return false;
 }
 
-function covidStep() {
-  window.sim.step();
+function covidStep(event) {
+  window.sim.step(STEP_DELTA);
   window.sim.draw();
   event.preventDefault();
-  return false;
 }
 
-
-function groupByKey(xs, key) {
-  return xs.reduce(function(rv, x) {
-    (rv[x[key]] = rv[x[key]] || []).push(x);
-    return rv;
-  }, {});
-}
-
-function groupByFunc(xs, key) {
-  return xs.reduce(function(rv, x) {
-    (rv[x[key]()] = rv[x[key]()] || []).push(x);
-    return rv;
-  }, {});
+function covidPlay(event) {
+  setInterval(() => {
+    for(var i = 0; i < 50; i++) {
+      window.sim.step(STEP_DELTA);
+    }
+    window.sim.draw();
+  }, 0);
+  setInterval(() => {
+    window.sim.drawStats();
+  }, 250);
+  event.preventDefault();
 }
