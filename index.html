@@ -20,6 +20,7 @@
             <button class="btn btn-success play-button" onClick="covidPlay(event, 25)" disabled>Play 25x</button>
             <button class="btn btn-success play-button" onClick="covidPlay(event, 100)" disabled>Play 100x</button>
             <button id="stop-button" class="btn btn-danger" onClick="covidStop(event)" disabled>Stop</button>
+            <button id="stop-button" class="btn btn-danger" onClick="covidBenchmark(event)">Benchmark</button>
           </div>
         </div>
       </div>
@@ -47,7 +48,7 @@
             <div class="form-group">
               <label for="walks-per-day">Walks per day</label>
               <input type="number" class="form-control" id="walks-per-day" value="0.5">
-              <small class="form-text text-muted">How often does each person travel travel?</small>
+              <small class="form-text text-muted">How often do people travel?</small>
             </div>
             <div class="form-group">
               <label for="walk-distance">Walk distance</label>
@@ -62,7 +63,7 @@
             <div class="form-group">
               <label for="area-per-person">Area per person</label>
               <input type="number" class="form-control" id="area-per-person" value="200">
-              <small class="form-text text-muted">Amount of square area per person, defines map size</small>
+              <small class="form-text text-muted">Amount of square area per person, population&times;area per person defines map size</small>
             </div>
             <div class="form-group">
               <label for="initial-infected">Initial infected</label>
@@ -82,7 +83,7 @@
             <div class="form-group">
               <label for="vulnerable-population">Vulnerable population</label>
               <input type="number" class="form-control" id="vulnerable-population" value="0.3">
-              <small class="form-text text-muted">Ratio of vulnerable people to non-vulnerable people</small>
+              <small class="form-text text-muted">Fraction of vulnerable people in the population</small>
             </div>
             <div class="form-group">
               <label for="incubation-period">Incubation period</label>

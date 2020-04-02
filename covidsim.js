@@ -44,12 +44,6 @@ function groupByFunc(xs, key) {
   }, {});
 }
 
-function getDistance(x0, y0, x1, y1) {
-  return Math.sqrt(Math.pow(x0 - x1, 2) + Math.pow(y0 - y1, 2));
-}
-
-
-
 class CovidSimulator {
   constructor(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod) {
     this.time = 0;
@@ -57,6 +51,7 @@ class CovidSimulator {
     this.walksPerDay = walksPerDay;
     this.walkDistance = walkDistance;
     this.infectionDistance = infectionDistance;
+    this.infectionDistanceSquared = infectionDistance * infectionDistance;
     this.areaPerPerson = areaPerPerson;
     this.initialInfected = initialInfected;
     this.vulnerableDeathRate = vulnerableDeathRate;
@@ -209,7 +204,6 @@ class CovidSimulator {
 
   step(timeDelta) {
     // hardcoded assumptions
-    // speed = 10 / hour
     // do infected people walk? => eventual boolean
     // people die in their symptomatic state
     // time and timeDelta are unit = seconds
@@ -256,15 +250,20 @@ class CovidSimulator {
       }
     });
 
-    const nonInfectedPeople = this.people.filter(person => !person.infected);
+    const nonInfectedPeople = this.people.filter(person => !person.infected && !person.recovered);
 
     // Detect all collisions and new infections!
     for (var i = 0; i < infectedPeople.length; i++) {
       const infector = infectedPeople[i];
       for (var j = 0; j < nonInfectedPeople.length; j++) {
         const infectee = nonInfectedPeople[j];
-        const distance = getDistance(infector.x % this.sideLength, infector.y % this.sideLength, infectee.x % this.sideLength, infectee.y % this.sideLength);
-        if (distance <= this.infectionDistance) {
+        const a = infector.x % this.sideLength;
+        const b = infector.y % this.sideLength;
+        const c = infectee.x % this.sideLength;
+        const d = infectee.y % this.sideLength;
+        const distance = (a - c) * (a - c) + (b - d) * (b - d);
+
+        if (distance <= this.infectionDistanceSquared) {
           infectee.infected = true;
         }
       }
@@ -469,4 +468,15 @@ function covidPlay(event, speed) {
   setDisabled('play', false);
 
   event.preventDefault();
+}
+
+function covidBenchmark(event) {
+  covidSetup(event);
+  console.time('covidBenchmark');
+
+
+  for (var i = 0; i < 50000; i++) {
+    window.sim.step(STEP_DELTA);
+  }
+  console.timeEnd('covidBenchmark');
 }
