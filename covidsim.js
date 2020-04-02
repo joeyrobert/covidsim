@@ -5,7 +5,7 @@ const RECOVERED_COLOR = '#4B0082';
 const NON_VULNERABLE_COLOR = '#00FF00';
 const VULNERABLE_COLOR = '#006400';
 const PERSON_SPEED = 0.01;
-const WALK_TARGET_THRESHOLD = 0.01;
+const WALK_TARGET_THRESHOLD = 0.1;
 const STEP_DELTA = 2;
 const SECONDS_IN_DAY = 86400;
 
@@ -81,6 +81,23 @@ class CovidSimulator {
     this.area = this.population * this.areaPerPerson;
     this.sideLength = Math.sqrt(this.area);
     const nonInfected = this.population - this.initialInfected;
+    this.gridSize = 64;
+    this.grid = Array(this.gridSize).fill(0).map(_ => []);
+    this.gridLength = Math.sqrt(this.gridSize);
+    this.gridLengthPerSide = this.sideLength / this.gridLength;
+
+    // Array of 9 cell neighbours including itself
+    this.neighbours = [
+      -this.gridLength - 1,
+      -this.gridLength,
+      -this.gridLength + 1,
+      -1,
+      0,
+      1,
+      this.gridLength - 1,
+      this.gridLength,
+      this.gridLength + 1,
+    ];
 
     for (var i = 0; i < nonInfected; i++) {
       this.people.push(new CovidPerson(
@@ -103,6 +120,172 @@ class CovidSimulator {
         this.symptomaticPeriod,
       ));
     }
+
+    this.people.forEach(person => {
+      person.cell = this.getCellFor(this.gridLength, this.gridLengthPerSide, person.x, person.y);
+      this.grid[person.cell].push(person);
+    });
+  }
+
+  getCellFor(gridLength, gridLengthPerSide, x, y) {
+    return Math.floor((x % this.sideLength) / gridLengthPerSide) * this.gridLength + Math.floor((y % this.sideLength) / gridLengthPerSide);
+  }
+
+  step(timeDelta) {
+    // hardcoded assumptions
+    // do infected people walk? => eventual boolean
+    // people die in their symptomatic state
+    // time and timeDelta are unit = seconds
+
+    // Get people to walk
+    const walkProbability = this.walksPerDay * timeDelta / SECONDS_IN_DAY;
+    const vulnerableDeathProbability = this.vulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
+    const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
+    const nonWalkingPeople = this.people.filter(person => !person.walking);
+
+    // Start people walking
+    nonWalkingPeople.forEach(person => {
+      const startWalking = getRandomCoinFlip(walkProbability);
+      if (startWalking) {
+        person.walking = true;
+        person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
+      }
+    });
+
+    const walkingPeople = this.people.filter(person => person.walking);
+
+    // Step people's walk
+    walkingPeople.forEach(person => {
+      person.walk(timeDelta);
+      const oldCell = person.cell;
+      person.cell = this.getCellFor(this.gridLength, this.gridLengthPerSide, person.x, person.y);
+      if (person.cell !== oldCell) {
+        // Remove old cell, filter yourself out of it
+        this.grid[oldCell] = this.grid[oldCell].filter(personInCell => personInCell !== person);
+
+        // Add to new cell
+        this.grid[person.cell].push(person);
+      }
+    });
+
+    // Advance all infected people's status
+    const infectedPeople = this.people.filter(person => person.infected);
+    infectedPeople.forEach(person => {
+      person.infectionDay += timeDelta / SECONDS_IN_DAY;
+
+      if (person.infectionDay > (this.incubationPeriod + this.symptomaticPeriod)) {
+        // person has recovered
+        person.infected = false;
+        person.recovered = true;
+      } else if (person.infectionDay > this.incubationPeriod) {
+        // person is symptomatic, they might die
+        const dead = getRandomCoinFlip(person.vulnerable ? vulnerableDeathProbability : nonVulnerableDeathProbability);
+        if (dead) {
+          person.dead = true;
+          person.walking = false;
+          person.infected = false;
+        }
+      }
+    });
+
+    // Detect all collisions and new infections!
+
+    const neighboursCache = [];
+
+    walkingPeople.forEach(person => {
+      const neighbours = this.neighbours.reduce((memo, neighbour) => {
+        const potentialCell = person.cell + neighbour;
+        if (potentialCell < 0 || potentialCell >= this.gridSize) {
+          return memo;
+        }
+        // Merge grid into memo array without creating a new object (mutable concat)
+        Array.prototype.push.apply(memo, this.grid[potentialCell]);
+        return memo;
+      }, []);
+
+      // Memoize the neighbours result
+      neighboursCache[person.cell] = neighbours;
+
+      if (person.infected) {
+        const nonInfectedPeople = neighbours.filter(neighbour => !neighbour.infected && !neighbour.recovered);
+
+        nonInfectedPeople.forEach(infectee => {
+          this.collision(person, infectee);
+        });
+      } else if (!person.recovered) {
+        const infectedPeople = neighbours.filter(neighbour => neighbour.infected && !neighbour.recovered);
+
+        // For loop so I can break easily
+        for (var i = 0; i < infectedPeople.length; i++) {
+          const infector = infectedPeople[i];
+          if (this.collision(infector, person)) {
+            // If infected once, stop looking for more infections
+            break;
+          }
+        }
+      }
+    });
+
+    this.time += timeDelta;
+  }
+
+  collision(infector, infectee) {
+    const a = infector.x % this.sideLength;
+    const b = infector.y % this.sideLength;
+    const c = infectee.x % this.sideLength;
+    const d = infectee.y % this.sideLength;
+    const distance = (a - c) * (a - c) + (b - d) * (b - d);
+
+    if (distance <= this.infectionDistanceSquared) {
+      infectee.infected = true;
+      return true;
+    }
+    return false;
+  }
+
+  clear() {
+    this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
+  }
+
+  draw() {
+    this.clear();
+    const heightRatio = this.canvasHeight / this.sideLength;
+    const widthRatio = this.canvasWidth / this.sideLength;
+
+    for (var i = 0; i < this.people.length; i++) {
+      const person = this.people[i];
+      this.ctx.beginPath();
+      this.ctx.arc((person.x % this.sideLength) * widthRatio, (person.y % this.sideLength) * heightRatio, this.infectionDistance * widthRatio, 0, 2 * Math.PI);
+      this.ctx.fillStyle = person.fillStyle();
+      this.ctx.fill();
+    }
+  }
+
+  drawStats() {
+    const time = this.time / SECONDS_IN_DAY;
+    this.timeTotal.innerHTML = time.toFixed(3);
+    const grouped = groupByFunc(this.people, 'fillStyle');
+    const stats = [
+      (grouped[NON_VULNERABLE_COLOR] || []).length,
+      (grouped[VULNERABLE_COLOR] || []).length,
+      (grouped[ASYMPTOMATIC_COLOR] || []).length,
+      (grouped[SYMPTOMATIC_COLOR] || []).length,
+      (grouped[RECOVERED_COLOR] || []).length,
+      (grouped[DEAD_COLOR] || []).length,
+    ];
+
+    this.nonVulnerableTotal.innerHTML = stats[0];
+    this.vulnerableTotal.innerHTML = stats[1];
+    this.asymptomaticTotal.innerHTML = stats[2];
+    this.symptomaticTotal.innerHTML = stats[3];
+    this.recoveredTotal.innerHTML = stats[4];
+    this.deadTotal.innerHTML = stats[5];
+
+    this.graph.data.datasets.forEach((dataset, i) => {
+      dataset.data.push({x: time, y: stats[i]});
+    });
+
+    this.graph.update(0);
   }
 
   setupGraph() {
@@ -197,121 +380,6 @@ class CovidSimulator {
     this.graphCtx = document.getElementById('covidsim-graph').getContext('2d');
     this.graph = new Chart(this.graphCtx, graphConfig);
   }
-
-  clear() {
-    this.ctx.clearRect(0, 0, this.canvasWidth, this.canvasHeight);
-  }
-
-  step(timeDelta) {
-    // hardcoded assumptions
-    // do infected people walk? => eventual boolean
-    // people die in their symptomatic state
-    // time and timeDelta are unit = seconds
-
-    // Get people to walk
-    const walkProbability = this.walksPerDay * timeDelta / SECONDS_IN_DAY;
-    const vulnerableDeathProbability = this.vulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
-    const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
-    const nonWalkingPeople = this.people.filter(person => !person.walking);
-
-    // Start people walking
-    nonWalkingPeople.forEach(person => {
-      const startWalking = getRandomCoinFlip(walkProbability);
-      if (startWalking) {
-        person.walking = true;
-        person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
-      }
-    });
-
-    const walkingPeople = this.people.filter(person => person.walking);
-
-    // Step people's walk
-    walkingPeople.forEach(person => {
-      person.walk(timeDelta);
-    });
-
-    // Advance all infected people's status
-    const infectedPeople = this.people.filter(person => person.infected);
-    infectedPeople.forEach(person => {
-      person.infectionDay += timeDelta / SECONDS_IN_DAY;
-
-      if (person.infectionDay > (this.incubationPeriod + this.symptomaticPeriod)) {
-        // person has recovered
-        person.infected = false;
-        person.recovered = true;
-      } else if (person.infectionDay > this.incubationPeriod) {
-        // person is symptomatic, they might die
-        const dead = getRandomCoinFlip(person.vulnerable ? vulnerableDeathProbability : nonVulnerableDeathProbability);
-        if (dead) {
-          person.dead = true;
-          person.walking = false;
-          person.infected = false;
-        }
-      }
-    });
-
-    const nonInfectedPeople = this.people.filter(person => !person.infected && !person.recovered);
-
-    // Detect all collisions and new infections!
-    for (var i = 0; i < infectedPeople.length; i++) {
-      const infector = infectedPeople[i];
-      for (var j = 0; j < nonInfectedPeople.length; j++) {
-        const infectee = nonInfectedPeople[j];
-        const a = infector.x % this.sideLength;
-        const b = infector.y % this.sideLength;
-        const c = infectee.x % this.sideLength;
-        const d = infectee.y % this.sideLength;
-        const distance = (a - c) * (a - c) + (b - d) * (b - d);
-
-        if (distance <= this.infectionDistanceSquared) {
-          infectee.infected = true;
-        }
-      }
-    }
-
-    this.time += timeDelta;
-  }
-
-  draw() {
-    this.clear();
-    const heightRatio = this.canvasHeight / this.sideLength;
-    const widthRatio = this.canvasWidth / this.sideLength;
-
-    for (var i = 0; i < this.people.length; i++) {
-      const person = this.people[i];
-      this.ctx.beginPath();
-      this.ctx.arc((person.x % this.sideLength) * widthRatio, (person.y % this.sideLength) * heightRatio, this.infectionDistance * widthRatio, 0, 2 * Math.PI);
-      this.ctx.fillStyle = person.fillStyle();
-      this.ctx.fill();
-    }
-  }
-
-  drawStats() {
-    const time = this.time / SECONDS_IN_DAY;
-    this.timeTotal.innerHTML = time.toFixed(3);
-    const grouped = groupByFunc(this.people, 'fillStyle');
-    const stats = [
-      (grouped[NON_VULNERABLE_COLOR] || []).length,
-      (grouped[VULNERABLE_COLOR] || []).length,
-      (grouped[ASYMPTOMATIC_COLOR] || []).length,
-      (grouped[SYMPTOMATIC_COLOR] || []).length,
-      (grouped[RECOVERED_COLOR] || []).length,
-      (grouped[DEAD_COLOR] || []).length,
-    ];
-
-    this.nonVulnerableTotal.innerHTML = stats[0];
-    this.vulnerableTotal.innerHTML = stats[1];
-    this.asymptomaticTotal.innerHTML = stats[2];
-    this.symptomaticTotal.innerHTML = stats[3];
-    this.recoveredTotal.innerHTML = stats[4];
-    this.deadTotal.innerHTML = stats[5];
-
-    this.graph.data.datasets.forEach((dataset, i) => {
-      dataset.data.push({x: time, y: stats[i]});
-    });
-
-    this.graph.update(0);
-  }
 }
 
 
@@ -358,20 +426,17 @@ class CovidPerson {
       (this.walkTarget[1] - this.y),
     ];
 
-    const magnitude = Math.sqrt(Math.pow(totalVector[0], 2) + Math.pow(totalVector[1], 2));
+    const magnitude = totalVector[0] * totalVector[0] + totalVector[1] * totalVector[1];
+
     // This stops the person from walking when they reach their target
     if (magnitude <= WALK_TARGET_THRESHOLD) {
       this.walking = false;
       return;
     }
 
-    const unitVector = [
-      totalVector[0] / magnitude,
-      totalVector[1] / magnitude,
-    ];
     const deltaVector = [
-      unitVector[0] * PERSON_SPEED * timeDelta,
-      unitVector[1] * PERSON_SPEED * timeDelta,
+      totalVector[0] / magnitude * PERSON_SPEED * timeDelta,
+      totalVector[1] / magnitude * PERSON_SPEED * timeDelta,
     ];
 
     if (Math.abs(deltaVector[0]) > Math.abs(totalVector[0])) {
