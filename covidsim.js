@@ -30,13 +30,6 @@ function getRandomWalkTarget(x, y, radius) {
   return [newX, newY];
 }
 
-function groupByKey(xs, key) {
-  return xs.reduce(function(rv, x) {
-    (rv[x[key]] = rv[x[key]] || []).push(x);
-    return rv;
-  }, {});
-}
-
 function groupByFunc(xs, key) {
   return xs.reduce(function(rv, x) {
     (rv[x[key]()] = rv[x[key]()] || []).push(x);
@@ -81,7 +74,7 @@ class CovidSimulator {
     this.area = this.population * this.areaPerPerson;
     this.sideLength = Math.sqrt(this.area);
     const nonInfected = this.population - this.initialInfected;
-    this.gridSize = 64;
+    this.gridSize = 225;
     this.grid = Array(this.gridSize).fill(0).map(_ => []);
     this.gridLength = Math.sqrt(this.gridSize);
     this.gridLengthPerSide = this.sideLength / this.gridLength;
@@ -103,6 +96,7 @@ class CovidSimulator {
       this.people.push(new CovidPerson(
         getRandomArbitrary(0, this.sideLength),
         getRandomArbitrary(0, this.sideLength),
+        this.sideLength,
         getRandomCoinFlip(this.vulnerablePopulation),
         false,
         this.incubationPeriod,
@@ -114,6 +108,7 @@ class CovidSimulator {
       this.people.push(new CovidPerson(
         getRandomArbitrary(0, this.sideLength),
         getRandomArbitrary(0, this.sideLength),
+        this.sideLength,
         getRandomCoinFlip(this.vulnerablePopulation),
         true,
         this.incubationPeriod,
@@ -122,13 +117,17 @@ class CovidSimulator {
     }
 
     this.people.forEach(person => {
-      person.cell = this.getCellFor(this.gridLength, this.gridLengthPerSide, person.x, person.y);
+      person.cell = this.getCellFor(person);
       this.grid[person.cell].push(person);
     });
   }
 
-  getCellFor(gridLength, gridLengthPerSide, x, y) {
-    return Math.floor((x % this.sideLength) / gridLengthPerSide) * this.gridLength + Math.floor((y % this.sideLength) / gridLengthPerSide);
+  getCellFor(person) {
+    const x = Math.floor((person.gridX % this.sideLength) / this.gridLengthPerSide) * this.gridLength + Math.floor((person.gridY % this.sideLength) / this.gridLengthPerSide);
+    if (isNaN(x)) {
+      debugger;
+    }
+    return x;
   }
 
   step(timeDelta) {
@@ -148,6 +147,7 @@ class CovidSimulator {
       const startWalking = getRandomCoinFlip(walkProbability);
       if (startWalking) {
         person.walking = true;
+        // use person.x/y instead of .gridX/Y to generate a possible out of bounds walking target
         person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
       }
     });
@@ -158,7 +158,7 @@ class CovidSimulator {
     walkingPeople.forEach(person => {
       person.walk(timeDelta);
       const oldCell = person.cell;
-      person.cell = this.getCellFor(this.gridLength, this.gridLengthPerSide, person.x, person.y);
+      person.cell = this.getCellFor(person);
       if (person.cell !== oldCell) {
         // Remove old cell, filter yourself out of it
         this.grid[oldCell] = this.grid[oldCell].filter(personInCell => personInCell !== person);
@@ -230,13 +230,14 @@ class CovidSimulator {
   }
 
   collision(infector, infectee) {
-    const a = infector.x % this.sideLength;
-    const b = infector.y % this.sideLength;
-    const c = infectee.x % this.sideLength;
-    const d = infectee.y % this.sideLength;
+    const a = infector.gridX;
+    const b = infector.gridY;
+    const c = infectee.gridX;
+    const d = infectee.gridY;
     const distance = (a - c) * (a - c) + (b - d) * (b - d);
 
     if (distance <= this.infectionDistanceSquared) {
+      debugger;
       infectee.infected = true;
       return true;
     }
@@ -385,9 +386,11 @@ class CovidSimulator {
 
 
 class CovidPerson {
-  constructor(x, y, vulnerable, infected, incubationPeriod, symptomaticPeriod, infectionDay=0, recovered=false, dead=false, walking=false, walkTarget=[0, 0]) {
+  constructor(x, y, sideLength, vulnerable, infected, incubationPeriod, symptomaticPeriod, infectionDay=0, recovered=false, dead=false, walking=false, walkTarget=[0, 0]) {
+    // x and y can be out of bounds, use .gridX or .gridY for inbounds
     this.x = x;
     this.y = y;
+    this.sideLength = sideLength;
     this.vulnerable = vulnerable;
     this.infected = infected;
     this.incubationPeriod = incubationPeriod;
@@ -449,6 +452,14 @@ class CovidPerson {
 
     this.x += deltaVector[0];
     this.y += deltaVector[1];
+  }
+
+  get gridX() {
+    return Math.abs(this.x % this.sideLength);
+  }
+
+  get gridY() {
+    return Math.abs(this.y % this.sideLength);
   }
 }
 
