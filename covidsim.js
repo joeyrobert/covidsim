@@ -74,7 +74,7 @@ class CovidSimulator {
     this.area = this.population * this.areaPerPerson;
     this.sideLength = Math.sqrt(this.area);
     const nonInfected = this.population - this.initialInfected;
-    this.gridSize = 225;
+    this.gridSize = Math.pow(Math.ceil(Math.sqrt(this.population)), 2);
     this.grid = Array(this.gridSize).fill(0).map(_ => []);
     this.gridLength = Math.sqrt(this.gridSize);
     this.gridLengthPerSide = this.sideLength / this.gridLength;
@@ -123,11 +123,7 @@ class CovidSimulator {
   }
 
   getCellFor(person) {
-    const x = Math.floor((person.gridX % this.sideLength) / this.gridLengthPerSide) * this.gridLength + Math.floor((person.gridY % this.sideLength) / this.gridLengthPerSide);
-    if (isNaN(x)) {
-      debugger;
-    }
-    return x;
+    return Math.floor((person.gridX % this.sideLength) / this.gridLengthPerSide) * this.gridLength + Math.floor((person.gridY % this.sideLength) / this.gridLengthPerSide);
   }
 
   step(timeDelta) {
@@ -157,6 +153,8 @@ class CovidSimulator {
     // Step people's walk
     walkingPeople.forEach(person => {
       person.walk(timeDelta);
+
+      // Update cell
       const oldCell = person.cell;
       person.cell = this.getCellFor(person);
       if (person.cell !== oldCell) {
@@ -189,7 +187,6 @@ class CovidSimulator {
     });
 
     // Detect all collisions and new infections!
-
     const neighboursCache = [];
 
     walkingPeople.forEach(person => {
@@ -237,7 +234,6 @@ class CovidSimulator {
     const distance = (a - c) * (a - c) + (b - d) * (b - d);
 
     if (distance <= this.infectionDistanceSquared) {
-      debugger;
       infectee.infected = true;
       return true;
     }
@@ -381,9 +377,12 @@ class CovidSimulator {
     this.graphCtx = document.getElementById('covidsim-graph').getContext('2d');
     this.graph = new Chart(this.graphCtx, graphConfig);
   }
+
+  isDone() {
+    const grouped = groupByFunc(this.people, 'fillStyle');
+    return (grouped[ASYMPTOMATIC_COLOR] || []).length === 0 && (grouped[SYMPTOMATIC_COLOR] || []).length === 0;
+  }
 }
-
-
 
 class CovidPerson {
   constructor(x, y, sideLength, vulnerable, infected, incubationPeriod, symptomaticPeriod, infectionDay=0, recovered=false, dead=false, walking=false, walkTarget=[0, 0]) {
@@ -406,12 +405,14 @@ class CovidPerson {
     if (this.dead)
       return DEAD_COLOR;
 
+    if (this.recovered)
+      return RECOVERED_COLOR;
+
     if (this.infected) {
       if (this.infectionDay <= this.incubationPeriod)
         return ASYMPTOMATIC_COLOR;
       if (this.infectionDay <= (this.incubationPeriod + this.symptomaticPeriod))
         return SYMPTOMATIC_COLOR;
-      return RECOVERED_COLOR;
     }
 
     if (this.vulnerable) {
@@ -429,17 +430,20 @@ class CovidPerson {
       (this.walkTarget[1] - this.y),
     ];
 
-    const magnitude = totalVector[0] * totalVector[0] + totalVector[1] * totalVector[1];
-
+    const magnitude = Math.sqrt(Math.pow(totalVector[0], 2) + Math.pow(totalVector[1], 2));
     // This stops the person from walking when they reach their target
     if (magnitude <= WALK_TARGET_THRESHOLD) {
       this.walking = false;
       return;
     }
 
+    const unitVector = [
+      totalVector[0] / magnitude,
+      totalVector[1] / magnitude,
+    ];
     const deltaVector = [
-      totalVector[0] / magnitude * PERSON_SPEED * timeDelta,
-      totalVector[1] / magnitude * PERSON_SPEED * timeDelta,
+      unitVector[0] * PERSON_SPEED * timeDelta,
+      unitVector[1] * PERSON_SPEED * timeDelta,
     ];
 
     if (Math.abs(deltaVector[0]) > Math.abs(totalVector[0])) {
@@ -532,6 +536,10 @@ function covidPlay(event, speed) {
       window.sim.step(STEP_DELTA);
     }
     window.sim.draw();
+
+    if (window.sim.isDone()) {
+      covidStop(event);
+    }
   }, 0);
   window.statInterval = setInterval(() => {
     window.sim.drawStats();
@@ -549,7 +557,6 @@ function covidPlay(event, speed) {
 function covidBenchmark(event) {
   covidSetup(event);
   console.time('covidBenchmark');
-
 
   for (var i = 0; i < 50000; i++) {
     window.sim.step(STEP_DELTA);
