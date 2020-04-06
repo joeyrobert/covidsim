@@ -4,6 +4,7 @@ const SYMPTOMATIC_COLOR = '#8B0000';
 const RECOVERED_COLOR = '#4B0082';
 const NON_VULNERABLE_COLOR = '#00FF00';
 const VULNERABLE_COLOR = '#006400';
+const IMMUNE_COLOR = '#0099CC';
 const PERSON_SPEED = 0.01;
 const WALK_TARGET_THRESHOLD = 0.1;
 const STEP_DELTA = 2;
@@ -38,7 +39,7 @@ function groupByFunc(xs, key) {
 }
 
 class CovidSimulator {
-  constructor(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod) {
+  constructor(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod, immunityPercentage, movingPercentage) {
     this.time = 0;
     this.population = population;
     this.walksPerDay = walksPerDay;
@@ -52,6 +53,8 @@ class CovidSimulator {
     this.vulnerablePopulation = vulnerablePopulation;
     this.incubationPeriod = incubationPeriod;
     this.symptomaticPeriod = symptomaticPeriod;
+    this.immunityPercentage = immunityPercentage;
+    this.movingPercentage = movingPercentage;
     this.generateSimulation();
     this.canvas = document.getElementById('covidsim');
     this.canvasWidth = this.canvas.width;
@@ -67,6 +70,8 @@ class CovidSimulator {
     this.symptomaticTotal = document.getElementById('symptomatic-total');
     this.recoveredTotal = document.getElementById('recovered-total');
     this.deadTotal = document.getElementById('dead-total');
+    this.immuneTotal = document.getElementById('immune-total');
+    this.rTotal = document.getElementById('r-total');
   }
 
   generateSimulation() {
@@ -91,13 +96,14 @@ class CovidSimulator {
       this.gridLength,
       this.gridLength + 1,
     ];
-
     for (var i = 0; i < nonInfected; i++) {
       this.people.push(new CovidPerson(
         getRandomArbitrary(0, this.sideLength),
         getRandomArbitrary(0, this.sideLength),
         this.sideLength,
         getRandomCoinFlip(this.vulnerablePopulation),
+        getRandomCoinFlip(this.immunityPercentage),
+        getRandomCoinFlip(this.movingPercentage),
         false,
         this.incubationPeriod,
         this.symptomaticPeriod,
@@ -110,6 +116,8 @@ class CovidSimulator {
         getRandomArbitrary(0, this.sideLength),
         this.sideLength,
         getRandomCoinFlip(this.vulnerablePopulation),
+        getRandomCoinFlip(this.immunityPercentage),
+        getRandomCoinFlip(this.movingPercentage),
         true,
         this.incubationPeriod,
         this.symptomaticPeriod,
@@ -136,7 +144,7 @@ class CovidSimulator {
     const walkProbability = this.walksPerDay * timeDelta / SECONDS_IN_DAY;
     const vulnerableDeathProbability = this.vulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
     const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
-    const nonWalkingPeople = this.people.filter(person => !person.walking);
+    const nonWalkingPeople = this.people.filter(person => !person.walking && person.moving);
 
     // Start people walking
     nonWalkingPeople.forEach(person => {
@@ -227,6 +235,9 @@ class CovidSimulator {
   }
 
   collision(infector, infectee) {
+    if (infectee.immune)
+      return false;
+
     const a = infector.gridX;
     const b = infector.gridY;
     const c = infectee.gridX;
@@ -234,6 +245,7 @@ class CovidSimulator {
     const distance = (a - c) * (a - c) + (b - d) * (b - d);
 
     if (distance <= this.infectionDistanceSquared) {
+      infector.numberInfected += 1;
       infectee.infected = true;
       return true;
     }
@@ -269,7 +281,11 @@ class CovidSimulator {
       (grouped[SYMPTOMATIC_COLOR] || []).length,
       (grouped[RECOVERED_COLOR] || []).length,
       (grouped[DEAD_COLOR] || []).length,
+      (grouped[IMMUNE_COLOR] || []).length,
     ];
+
+    const haveBeenInfected = this.people.filter(person => person.infected || person.recovered);
+    const avgNumberOfInfections = haveBeenInfected.length === 0 ? 0 : haveBeenInfected.reduce((memo, person) => memo + person.numberInfected, 0) / haveBeenInfected.length;
 
     this.nonVulnerableTotal.innerHTML = stats[0];
     this.vulnerableTotal.innerHTML = stats[1];
@@ -277,6 +293,8 @@ class CovidSimulator {
     this.symptomaticTotal.innerHTML = stats[3];
     this.recoveredTotal.innerHTML = stats[4];
     this.deadTotal.innerHTML = stats[5];
+    this.immuneTotal.innerHTML = stats[6];
+    this.rTotal.innerHTML = avgNumberOfInfections.toFixed(3);
 
     this.graph.data.datasets.forEach((dataset, i) => {
       dataset.data.push({x: time, y: stats[i]});
@@ -344,6 +362,15 @@ class CovidSimulator {
             fill: false,
             pointRadius: 0,
           },
+          {
+            label: 'Immune',
+            borderColor: IMMUNE_COLOR,
+            backgroundColor: IMMUNE_COLOR,
+            data: [],
+            showLine: true,
+            fill: false,
+            pointRadius: 0,
+          },
         ]
       },
       options: {
@@ -385,12 +412,14 @@ class CovidSimulator {
 }
 
 class CovidPerson {
-  constructor(x, y, sideLength, vulnerable, infected, incubationPeriod, symptomaticPeriod, infectionDay=0, recovered=false, dead=false, walking=false, walkTarget=[0, 0]) {
+  constructor(x, y, sideLength, vulnerable, immune, moving, infected, incubationPeriod, symptomaticPeriod, infectionDay=0, recovered=false, dead=false, walking=false, walkTarget=[0, 0]) {
     // x and y can be out of bounds, use .gridX or .gridY for inbounds
     this.x = x;
     this.y = y;
     this.sideLength = sideLength;
     this.vulnerable = vulnerable;
+    this.immune = immune;
+    this.moving = moving;
     this.infected = infected;
     this.incubationPeriod = incubationPeriod;
     this.symptomaticPeriod = symptomaticPeriod;
@@ -399,9 +428,13 @@ class CovidPerson {
     this.dead = dead;
     this.walking = walking;
     this.walkTarget = walkTarget;
+    this.numberInfected = 0;
   }
 
   fillStyle() {
+    if (this.immune)
+      return IMMUNE_COLOR;
+
     if (this.dead)
       return DEAD_COLOR;
 
@@ -415,9 +448,8 @@ class CovidPerson {
         return SYMPTOMATIC_COLOR;
     }
 
-    if (this.vulnerable) {
+    if (this.vulnerable)
       return VULNERABLE_COLOR;
-    }
 
     return NON_VULNERABLE_COLOR;
   }
@@ -494,9 +526,11 @@ function covidSetup(event) {
   const vulnerableDeathRate = parseFloat(document.getElementById('vulnerable-death-rate').value);
   const nonVulnerableDeathRate = parseFloat(document.getElementById('non-vulnerable-death-rate').value);
   const vulnerablePopulation = parseFloat(document.getElementById('vulnerable-population').value);
-  const incubationPeriod = parseInt(document.getElementById('incubation-period').value);
-  const symptomaticPeriod = parseInt(document.getElementById('symptomatic-period').value);
-  window.sim = new CovidSimulator(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod);
+  const incubationPeriod = parseInt(document.getElementById('incubation-period').value, 10);
+  const symptomaticPeriod = parseInt(document.getElementById('symptomatic-period').value, 10);
+  const immunityPercentage = parseFloat(document.getElementById('immunity-percentage').value);
+  const movingPercentage = parseFloat(document.getElementById('moving-percentage').value);
+  window.sim = new CovidSimulator(population, walksPerDay, walkDistance, infectionDistance, areaPerPerson, initialInfected, vulnerableDeathRate, nonVulnerableDeathRate, vulnerablePopulation, incubationPeriod, symptomaticPeriod, immunityPercentage, movingPercentage);
   window.sim.draw();
   window.sim.drawStats();
 

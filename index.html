@@ -45,7 +45,9 @@
             Asymptomatic: <strong class="asymptomatic-color"><span id="asymptomatic-total">0</span></strong>,
             Symptomatic: <strong class="symptomatic-color"><span id="symptomatic-total">0</span></strong>,
             Recovered: <strong class="recovered-color"><span id="recovered-total">0</span></strong>,
-            Dead: <strong class="dead-color"><span id="dead-total">0</span></strong>
+            Dead: <strong class="dead-color"><span id="dead-total">0</span></strong>,
+            Immune: <strong class="immune-color"><span id="immune-total">0</span></strong>,
+            R<sub>0</sub>: <strong class="text-warning"><span id="r-total">0</span></strong>
           </div>
           <canvas id="covidsim-graph" height="150" width="800"></canvas>
         </div>
@@ -53,58 +55,68 @@
           <form>
             <div class="form-group">
               <label for="population">Population</label>
-              <input type="number" class="form-control" id="population" value="1000">
+              <input type="number" class="form-control" id="population" value="1000" min="0">
               <small class="form-text text-muted">Total number of people</small>
             </div>
             <div class="form-group">
               <label for="walks-per-day">Walks per day</label>
-              <input type="number" class="form-control" id="walks-per-day" value="0.5">
+              <input type="number" class="form-control" id="walks-per-day" value="0.5" min="0">
               <small class="form-text text-muted">How often do people travel?</small>
             </div>
             <div class="form-group">
               <label for="walk-distance">Walk distance</label>
-              <input type="number" class="form-control" id="walk-distance" value="100">
+              <input type="number" class="form-control" id="walk-distance" value="100" min="1">
               <small class="form-text text-muted">How far is each person's walk?</small>
             </div>
             <div class="form-group">
               <label for="infection-distance">Infection distance</label>
-              <input type="number" class="form-control" id="infection-distance" value="1">
+              <input type="number" class="form-control" id="infection-distance" value="1" min="1">
               <small class="form-text text-muted">How close to do you need to be to catch the disease? This is the circle size. When circles overlap, an infection can occur.</small>
             </div>
             <div class="form-group">
               <label for="area-per-person">Area per person</label>
-              <input type="number" class="form-control" id="area-per-person" value="200">
+              <input type="number" class="form-control" id="area-per-person" value="200" min="1">
               <small class="form-text text-muted">Amount of square area per person, population&times;area per person defines map size</small>
             </div>
             <div class="form-group">
               <label for="initial-infected">Initial infected</label>
-              <input type="number" class="form-control" id="initial-infected" value="10">
+              <input type="number" class="form-control" id="initial-infected" value="10" min="1">
               <small class="form-text text-muted">Number of people infected at the start</small>
             </div>
             <div class="form-group">
               <label for="vulnerable-death-rate">Vulnerable death rate</label>
-              <input type="number" class="form-control" id="vulnerable-death-rate" value="0.3">
+              <input type="number" class="form-control" id="vulnerable-death-rate" value="0.1" value="0.25" min="0" max="1">
               <small class="form-text text-muted">Death rate of the vulnerable population</small>
             </div>
             <div class="form-group">
               <label for="non-vulnerable-death-rate">Non-vulnerable death rate</label>
-              <input type="number" class="form-control" id="non-vulnerable-death-rate" value="0.005">
+              <input type="number" class="form-control" id="non-vulnerable-death-rate" value="0.005" value="0.25" min="0" max="1">
               <small class="form-text text-muted">Death rate of the non-vulnerable population</small>
             </div>
             <div class="form-group">
               <label for="vulnerable-population">Vulnerable population</label>
-              <input type="number" class="form-control" id="vulnerable-population" value="0.3">
+              <input type="number" class="form-control" id="vulnerable-population" value="0.25" min="0" max="1">
               <small class="form-text text-muted">Fraction of vulnerable people in the population</small>
             </div>
             <div class="form-group">
               <label for="incubation-period">Incubation period</label>
-              <input type="number" class="form-control" id="incubation-period" value="4">
+              <input type="number" class="form-control" id="incubation-period" value="4" min="0">
               <small class="form-text text-muted">Initial days with virus while asymptomatic</small>
             </div>
             <div class="form-group">
               <label for="symptomatic-period">Symptomatic period</label>
-              <input type="number" class="form-control" id="symptomatic-period" value="14">
+              <input type="number" class="form-control" id="symptomatic-period" value="14" min="0">
               <small class="form-text text-muted">Days with virus while symptomatic</small>
+            </div>
+            <div class="form-group">
+              <label for="immunity-percentage">Immunity percentage</label>
+              <input type="number" class="form-control" id="immunity-percentage" value="0.05" min="0" max="1">
+              <small class="form-text text-muted">Percent of population that is immune to the virus</small>
+            </div>
+            <div class="form-group">
+              <label for="moving-percentage">Moving percentage</label>
+              <input type="number" class="form-control" id="moving-percentage" value="1" min="0" max="1">
+              <small class="form-text text-muted">Percent of population that takes walks</small>
             </div>
           </form>
         </div>
