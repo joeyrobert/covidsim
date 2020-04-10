@@ -117,7 +117,7 @@ class CovidSimulator {
         getRandomArbitrary(0, this.sideLength),
         this.sideLength,
         getRandomCoinFlip(this.vulnerablePopulation),
-        getRandomCoinFlip(this.immunityPercentage),
+        false,
         getRandomCoinFlip(this.movingPercentage),
         true,
         this.incubationPeriod,
