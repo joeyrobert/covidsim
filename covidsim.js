@@ -71,6 +71,7 @@ class CovidSimulator {
     this.recoveredTotal = document.getElementById('recovered-total');
     this.deadTotal = document.getElementById('dead-total');
     this.immuneTotal = document.getElementById('immune-total');
+    this.speedTotal = document.getElementById('speed-total');
     this.rTotal = document.getElementById('r-total');
   }
 
@@ -201,7 +202,7 @@ class CovidSimulator {
       for (var neighbour of this.neighbours) {
         const potentialCell = person.cell + neighbour;
         if (potentialCell < 0 || potentialCell >= this.gridSize) {
-          return;
+          continue;
         }
 
         for (var neighbourPerson of this.grid[potentialCell]) {
@@ -255,7 +256,7 @@ class CovidSimulator {
     }
   }
 
-  drawStats() {
+  drawStats(steps, startTime) {
     const time = this.time / SECONDS_IN_DAY;
     this.timeTotal.innerHTML = time.toFixed(3);
     const grouped = groupByFunc(this.people, 'fillStyle');
@@ -271,6 +272,7 @@ class CovidSimulator {
 
     const haveBeenInfected = this.people.filter(person => person.infected || person.recovered);
     const avgNumberOfInfections = haveBeenInfected.length === 0 ? 0 : haveBeenInfected.reduce((memo, person) => memo + person.numberInfected, 0) / haveBeenInfected.length;
+    const speed = (steps && startTime) ? steps / ((new Date().getTime() - startTime) / 1000) : 0;
 
     this.nonVulnerableTotal.innerHTML = stats[0];
     this.vulnerableTotal.innerHTML = stats[1];
@@ -280,6 +282,9 @@ class CovidSimulator {
     this.deadTotal.innerHTML = stats[5];
     this.immuneTotal.innerHTML = stats[6];
     this.rTotal.innerHTML = avgNumberOfInfections.toFixed(3);
+    this.immuneTotal.innerHTML = stats[6];
+    this.speedTotal.innerHTML = speed.toFixed(1);
+
 
     this.graph.data.datasets.forEach((dataset, i) => {
       dataset.data.push({x: time, y: stats[i]});
@@ -550,10 +555,13 @@ function covidStop(event) {
 
 function covidPlay(event, speed) {
   covidStop(event);
+  var steps = 0;
+  var startTime = new Date().getTime();
   window.playInterval = setInterval(() => {
     for (var i = 0; i < speed; i++) {
       window.sim.step(STEP_DELTA);
     }
+    steps += speed;
     window.sim.draw();
 
     if (window.sim.isDone()) {
@@ -561,7 +569,7 @@ function covidPlay(event, speed) {
     }
   }, 0);
   window.statInterval = setInterval(() => {
-    window.sim.drawStats();
+    window.sim.drawStats(steps, startTime);
   }, 250);
 
   // Enable stop button, disable setup button
