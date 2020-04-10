@@ -140,8 +140,6 @@ class CovidSimulator {
     // do infected people walk? => eventual boolean
     // people die in their symptomatic state
     // time and timeDelta are unit = seconds
-
-    // Get people to walk
     const walkProbability = this.walksPerDay * timeDelta / SECONDS_IN_DAY;
     const vulnerableDeathProbability = this.vulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
     const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
@@ -193,30 +191,26 @@ class CovidSimulator {
         }
       }
 
-
       // Detect all collisions and new infections!
-      for (var neighbour of this.neighbours) {
-        const potentialCell = person.cell + neighbour;
-        if (potentialCell < 0 || potentialCell >= this.gridSize) {
-          continue;
-        }
+      if (person.walking) {
+        for (var neighbour of this.neighbours) {
+          const potentialCell = person.cell + neighbour;
+          if (potentialCell < 0 || potentialCell >= this.gridSize) {
+            continue;
+          }
 
-        for (var neighbourPerson of this.grid[potentialCell]) {
-          if (person.infected && !neighbourPerson.infected && !neighbourPerson.recovered) {
-            this.collision(person, neighbourPerson);
-          } else if (!person.infected && !person.recovered && neighbourPerson.infected && !neighbourPerson.recovered) {
-            if (this.collision(neighbourPerson, person)) {
-              continue mainLoop;
+          for (var neighbourPerson of this.grid[potentialCell]) {
+            if (person.infected && !neighbourPerson.infected && !neighbourPerson.recovered) {
+              this.collision(person, neighbourPerson);
+            } else if (!person.infected && !person.recovered && neighbourPerson.infected && !neighbourPerson.recovered) {
+              if (this.collision(neighbourPerson, person)) {
+                continue mainLoop;
+              }
             }
           }
         }
       }
-
     }
-
-    // walkingLoop:
-    // for (var person of walkingPeople) {
-    // }
 
     this.time += timeDelta;
   }
