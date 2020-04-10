@@ -145,60 +145,56 @@ class CovidSimulator {
     const walkProbability = this.walksPerDay * timeDelta / SECONDS_IN_DAY;
     const vulnerableDeathProbability = this.vulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
     const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
-    const nonWalkingPeople = this.people.filter(person => !person.walking && person.moving);
 
-    // Start people walking
-    nonWalkingPeople.forEach(person => {
-      const startWalking = getRandomCoinFlip(walkProbability);
-      if (startWalking) {
-        person.walking = true;
-        // use person.x/y instead of .gridX/Y to generate a possible out of bounds walking target
-        person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
-      }
-    });
-
-    const walkingPeople = this.people.filter(person => person.walking);
-
-    // Step people's walk
-    walkingPeople.forEach(person => {
-      person.walk(timeDelta);
-
-      // Update cell
-      const oldCell = person.cell;
-      person.cell = this.getCellFor(person);
-      if (person.cell !== oldCell) {
-        // Remove old cell, filter yourself out of it
-        this.grid[oldCell] = this.grid[oldCell].filter(personInCell => personInCell !== person);
-
-        // Add to new cell
-        this.grid[person.cell].push(person);
-      }
-    });
-
-    // Advance all infected people's status
-    const infectedPeople = this.people.filter(person => person.infected);
-    infectedPeople.forEach(person => {
-      person.infectionDay += timeDelta / SECONDS_IN_DAY;
-
-      if (person.infectionDay > (this.incubationPeriod + this.symptomaticPeriod)) {
-        // person has recovered
-        person.infected = false;
-        person.recovered = true;
-      } else if (person.infectionDay > this.incubationPeriod) {
-        // person is symptomatic, they might die
-        const dead = getRandomCoinFlip(person.vulnerable ? vulnerableDeathProbability : nonVulnerableDeathProbability);
-        if (dead) {
-          person.dead = true;
-          person.walking = false;
-          person.infected = false;
+    mainLoop:
+    for (var person of this.people) {
+      // Start people walking
+      if (!person.walking && person.moving) {
+        const startWalking = getRandomCoinFlip(walkProbability);
+        if (startWalking) {
+          person.walking = true;
+          // use person.x/y instead of .gridX/Y to generate a possible out of bounds walking target
+          person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
         }
       }
-    });
 
-    // Detect all collisions and new infections!
-    // walkingPeople.forEach(person => {
-    walkingLoop:
-    for (var person of walkingPeople) {
+      // Step walking
+      if (person.walking) {
+        person.walk(timeDelta);
+
+        // Update cell
+        const oldCell = person.cell;
+        person.cell = this.getCellFor(person);
+        if (person.cell !== oldCell) {
+          // Remove old cell, filter yourself out of it
+          this.grid[oldCell] = this.grid[oldCell].filter(personInCell => personInCell !== person);
+
+          // Add to new cell
+          this.grid[person.cell].push(person);
+        }
+      }
+
+      // Advance all infected people's status
+      if (person.infected) {
+        person.infectionDay += timeDelta / SECONDS_IN_DAY;
+
+        if (person.infectionDay > (this.incubationPeriod + this.symptomaticPeriod)) {
+          // person has recovered
+          person.infected = false;
+          person.recovered = true;
+        } else if (person.infectionDay > this.incubationPeriod) {
+          // person is symptomatic, they might die
+          const dead = getRandomCoinFlip(person.vulnerable ? vulnerableDeathProbability : nonVulnerableDeathProbability);
+          if (dead) {
+            person.dead = true;
+            person.walking = false;
+            person.infected = false;
+          }
+        }
+      }
+
+
+      // Detect all collisions and new infections!
       for (var neighbour of this.neighbours) {
         const potentialCell = person.cell + neighbour;
         if (potentialCell < 0 || potentialCell >= this.gridSize) {
@@ -210,12 +206,17 @@ class CovidSimulator {
             this.collision(person, neighbourPerson);
           } else if (!person.infected && !person.recovered && neighbourPerson.infected && !neighbourPerson.recovered) {
             if (this.collision(neighbourPerson, person)) {
-              continue walkingLoop;
+              continue mainLoop;
             }
           }
         }
       }
+
     }
+
+    // walkingLoop:
+    // for (var person of walkingPeople) {
+    // }
 
     this.time += timeDelta;
   }
