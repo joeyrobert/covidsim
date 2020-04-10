@@ -195,41 +195,26 @@ class CovidSimulator {
     });
 
     // Detect all collisions and new infections!
-    const neighboursCache = [];
-
-    walkingPeople.forEach(person => {
-      const neighbours = this.neighbours.reduce((memo, neighbour) => {
+    // walkingPeople.forEach(person => {
+    walkingLoop:
+    for (var person of walkingPeople) {
+      for (var neighbour of this.neighbours) {
         const potentialCell = person.cell + neighbour;
         if (potentialCell < 0 || potentialCell >= this.gridSize) {
-          return memo;
+          return;
         }
-        // Merge grid into memo array without creating a new object (mutable concat)
-        Array.prototype.push.apply(memo, this.grid[potentialCell]);
-        return memo;
-      }, []);
 
-      // Memoize the neighbours result
-      neighboursCache[person.cell] = neighbours;
-
-      if (person.infected) {
-        const nonInfectedPeople = neighbours.filter(neighbour => !neighbour.infected && !neighbour.recovered);
-
-        nonInfectedPeople.forEach(infectee => {
-          this.collision(person, infectee);
-        });
-      } else if (!person.recovered) {
-        const infectedPeople = neighbours.filter(neighbour => neighbour.infected && !neighbour.recovered);
-
-        // For loop so I can break easily
-        for (var i = 0; i < infectedPeople.length; i++) {
-          const infector = infectedPeople[i];
-          if (this.collision(infector, person)) {
-            // If infected once, stop looking for more infections
-            break;
+        for (var neighbourPerson of this.grid[potentialCell]) {
+          if (person.infected && !neighbourPerson.infected && !neighbourPerson.recovered) {
+            this.collision(person, neighbourPerson);
+          } else if (!person.infected && !person.recovered && neighbourPerson.infected && !neighbourPerson.recovered) {
+            if (this.collision(neighbourPerson, person)) {
+              continue walkingLoop;
+            }
           }
         }
       }
-    });
+    }
 
     this.time += timeDelta;
   }
