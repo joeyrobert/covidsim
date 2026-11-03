@@ -111,15 +111,14 @@ frame, which is the reason the step rate matters more than anything else here.
 ## Model equivalence
 
 The walk and death decisions used to be coin flips rolled for every person on every
-step, and are now scheduled events. Two runs of each version, over 3 days with
-nothing but walking going on, started 14,872 walks in the old version and 14,938 in
+step, and are now scheduled events. Eight runs of each version, over 3 days with
+nothing but walking going on, started 14,904 walks in the old version and 14,959 in
 the new one, against the 15,000 that 5 walks per day for 1000 people implies. Over a
-fully infected population, the old version killed 30 of 1000 and the new one 27,
-against the 27 or so those death rates imply. Both versions also ended with all 1000
-people recovered or dead. Epidemic outcomes on the shipped defaults, such as the final
-number of people who were ever infected, overlap between the two versions: 799 ± 35
-before and 775 ± 26 after across 12 runs, which is inside the run to run spread of
-either one.
+fully infected population the old version killed 29.6 of 1000 and the new one 24.8,
+against the 27.5 those death rates imply, and both ended with all 1000 people
+recovered or dead. Epidemic outcomes on the shipped defaults, such as the final number
+of people who were ever infected, overlap between the two versions: 799 ± 35 before and
+775 ± 26 after across 12 runs, which is inside the run to run spread of either one.
 
 The coin flip versions also had a side effect worth knowing about: a dead person
 could still be infected by a passing walker, and after long enough they were counted
