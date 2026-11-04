@@ -7,13 +7,38 @@ const VULNERABLE_COLOR = '#006400';
 const IMMUNE_COLOR = '#0099CC';
 const PERSON_SPEED = 0.01;
 const WALK_TARGET_THRESHOLD = 0.1;
+const WALK_TARGET_THRESHOLD_SQUARED = WALK_TARGET_THRESHOLD * WALK_TARGET_THRESHOLD;
 const STEP_DELTA = 2;
 const SECONDS_IN_DAY = 86400;
+const TWO_PI = Math.PI * 2;
+const MAX_GRAPH_POINTS = 500;
 
-function getRandomInt(min, max) {
-  min = Math.ceil(min);
-  max = Math.floor(max);
-  return Math.floor(Math.random() * (max - min + 1)) + min;
+// Stats, graph datasets and their counts all share this order.
+const STATE_LABELS = ['Non-Vulnerable', 'Vulnerable', 'Asymptomatic', 'Symptomatic', 'Recovered', 'Dead', 'Immune'];
+const STATE_COLORS = [
+  NON_VULNERABLE_COLOR,
+  VULNERABLE_COLOR,
+  ASYMPTOMATIC_COLOR,
+  SYMPTOMATIC_COLOR,
+  RECOVERED_COLOR,
+  DEAD_COLOR,
+  IMMUNE_COLOR,
+];
+
+// One colour group is filled per frame, so this is paint order: healthy first, infectious last
+const DRAW_COLORS = [
+  NON_VULNERABLE_COLOR,
+  VULNERABLE_COLOR,
+  IMMUNE_COLOR,
+  RECOVERED_COLOR,
+  DEAD_COLOR,
+  ASYMPTOMATIC_COLOR,
+  SYMPTOMATIC_COLOR,
+];
+
+const COLOR_INDEX = {};
+for (var i = 0; i < STATE_COLORS.length; i++) {
+  COLOR_INDEX[STATE_COLORS[i]] = i;
 }
 
 function getRandomArbitrary(min, max) {
@@ -24,18 +49,19 @@ function getRandomCoinFlip(probability) {
   return Math.random() <= probability;
 }
 
+// Seconds until the next event in a process firing eventsPerDay times per day, instead of flipping a tiny coin per person per step
+function getRandomEventDelay(eventsPerDay) {
+  if (eventsPerDay <= 0) {
+    return Infinity;
+  }
+  return -Math.log(1 - Math.random()) * SECONDS_IN_DAY / eventsPerDay;
+}
+
 function getRandomWalkTarget(x, y, radius) {
-  const angle = Math.random() * 2 * Math.PI;
+  const angle = Math.random() * TWO_PI;
   const newX = x + Math.cos(angle) * radius;
   const newY = y + Math.sin(angle) * radius;
   return [newX, newY];
-}
-
-function groupByFunc(xs, key) {
-  return xs.reduce(function(rv, x) {
-    (rv[x[key]()] = rv[x[key]()] || []).push(x);
-    return rv;
-  }, {});
 }
 
 class CovidSimulator {
@@ -55,31 +81,46 @@ class CovidSimulator {
     this.symptomaticPeriod = symptomaticPeriod;
     this.immunityPercentage = immunityPercentage;
     this.movingPercentage = movingPercentage;
+    this.infectiousPeriod = incubationPeriod + symptomaticPeriod;
     this.generateSimulation();
     this.canvas = document.getElementById('covidsim');
     this.canvasWidth = this.canvas.width;
     this.canvasHeight = this.canvas.height;
     this.ctx = this.canvas.getContext('2d');
+    this.xScale = this.canvasWidth / this.sideLength;
+    this.yScale = this.canvasHeight / this.sideLength;
+    this.circleRadius = this.infectionDistance * this.xScale;
+    this.drawBuckets = DRAW_COLORS.map(_ => []);
+    this.drawBucketIndex = {};
+    for (var group = 0; group < DRAW_COLORS.length; group++) {
+      this.drawBucketIndex[DRAW_COLORS[group]] = group;
+    }
+    this.statsCounts = STATE_COLORS.map(_ => 0);
+    this.graphSampleCount = 0;
+    this.graphSampleStride = 1;
     this.setupGraph();
 
-    // Stats elements
+    // Stats elements, in STATE_COLORS order
     this.timeTotal = document.getElementById('time-total');
-    this.nonVulnerableTotal = document.getElementById('non-vulnerable-total');
-    this.vulnerableTotal = document.getElementById('vulnerable-total');
-    this.asymptomaticTotal = document.getElementById('asymptomatic-total');
-    this.symptomaticTotal = document.getElementById('symptomatic-total');
-    this.recoveredTotal = document.getElementById('recovered-total');
-    this.deadTotal = document.getElementById('dead-total');
-    this.immuneTotal = document.getElementById('immune-total');
-    this.speedTotal = document.getElementById('speed-total');
+    this.statTotals = [
+      document.getElementById('non-vulnerable-total'),
+      document.getElementById('vulnerable-total'),
+      document.getElementById('asymptomatic-total'),
+      document.getElementById('symptomatic-total'),
+      document.getElementById('recovered-total'),
+      document.getElementById('dead-total'),
+      document.getElementById('immune-total'),
+    ];
     this.rTotal = document.getElementById('r-total');
+    this.speedTotal = document.getElementById('speed-total');
   }
 
   generateSimulation() {
     this.people = [];
     this.area = this.population * this.areaPerPerson;
     this.sideLength = Math.sqrt(this.area);
-    const nonInfected = this.population - this.initialInfected;
+    const initiallyInfected = Math.min(this.initialInfected, this.population);
+    const nonInfected = this.population - initiallyInfected;
     this.gridSize = Math.pow(Math.ceil(Math.sqrt(this.population)), 2);
     this.grid = Array(this.gridSize).fill(0).map(_ => []);
     this.gridLength = Math.sqrt(this.gridSize);
@@ -97,42 +138,68 @@ class CovidSimulator {
       this.gridLength,
       this.gridLength + 1,
     ];
-    for (var i = 0; i < nonInfected; i++) {
-      this.people.push(new CovidPerson(
+
+    // Immune people are never infected and dead people never move, so neither belongs in the collision grid
+    for (var i = 0; i < this.population; i++) {
+      const infected = i >= nonInfected;
+      const immune = infected ? false : getRandomCoinFlip(this.immunityPercentage);
+      const person = new CovidPerson(
         getRandomArbitrary(0, this.sideLength),
         getRandomArbitrary(0, this.sideLength),
         this.sideLength,
         getRandomCoinFlip(this.vulnerablePopulation),
-        getRandomCoinFlip(this.immunityPercentage),
+        immune,
         getRandomCoinFlip(this.movingPercentage),
-        false,
+        infected,
         this.incubationPeriod,
         this.symptomaticPeriod,
-      ));
+      );
+      if (person.moving) {
+        person.nextWalkTime = getRandomEventDelay(this.walksPerDay);
+      }
+      if (!immune) {
+        person.cell = this.getCellFor(person);
+        this.grid[person.cell].push(person);
+      }
+      this.people.push(person);
     }
 
-    for (var i = 0; i < this.initialInfected; i++) {
-      this.people.push(new CovidPerson(
-        getRandomArbitrary(0, this.sideLength),
-        getRandomArbitrary(0, this.sideLength),
-        this.sideLength,
-        getRandomCoinFlip(this.vulnerablePopulation),
-        false,
-        getRandomCoinFlip(this.movingPercentage),
-        true,
-        this.incubationPeriod,
-        this.symptomaticPeriod,
-      ));
-    }
-
-    this.people.forEach(person => {
-      person.cell = this.getCellFor(person);
-      this.grid[person.cell].push(person);
-    });
+    // The initial infected are infectious from time 0.
+    this.activeInfections = initiallyInfected;
   }
 
   getCellFor(person) {
-    return Math.floor((person.gridX % this.sideLength) / this.gridLengthPerSide) * this.gridLength + Math.floor((person.gridY % this.sideLength) / this.gridLengthPerSide);
+    return Math.floor(person.gridX / this.gridLengthPerSide) * this.gridLength + Math.floor(person.gridY / this.gridLengthPerSide);
+  }
+
+  removePersonFromCell(person) {
+    if (person.cell === -1) {
+      return;
+    }
+    const cell = this.grid[person.cell];
+    const index = cell.indexOf(person);
+    if (index !== -1) {
+      // Cell order is irrelevant to collisions, so fill the gap with the last entry.
+      cell[index] = cell[cell.length - 1];
+      cell.pop();
+    }
+    person.cell = -1;
+  }
+
+  updatePersonCell(person) {
+    const cell = this.getCellFor(person);
+    if (cell === person.cell) {
+      return;
+    }
+    this.removePersonFromCell(person);
+    this.grid[cell].push(person);
+    person.cell = cell;
+  }
+
+  startWalking(person) {
+    person.walking = true;
+    // use person.x/y instead of .gridX/Y to generate a possible out of bounds walking target
+    person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
   }
 
   step(timeDelta) {
@@ -140,85 +207,93 @@ class CovidSimulator {
     // do infected people walk? => eventual boolean
     // people die in their symptomatic state
     // time and timeDelta are unit = seconds
-    const walkProbability = this.walksPerDay * timeDelta / SECONDS_IN_DAY;
-    const vulnerableDeathProbability = this.vulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
-    const nonVulnerableDeathProbability = this.nonVulnerableDeathRate * timeDelta / (this.symptomaticPeriod * SECONDS_IN_DAY);
+    const endTime = this.time + timeDelta;
+    const daysPerStep = timeDelta / SECONDS_IN_DAY;
+    const people = this.people;
 
-    mainLoop:
-    for (var person of this.people) {
+    for (var i = 0; i < people.length; i++) {
+      const person = people[i];
+      // A dead person cannot walk, cannot be infected, and has no status left to advance
+      if (person.dead) {
+        continue;
+      }
+
       // Start people walking
-      if (!person.walking && person.moving) {
-        const startWalking = getRandomCoinFlip(walkProbability);
-        if (startWalking) {
-          person.walking = true;
-          // use person.x/y instead of .gridX/Y to generate a possible out of bounds walking target
-          person.walkTarget = getRandomWalkTarget(person.x, person.y, this.walkDistance);
-        }
+      if (!person.walking && person.moving && endTime >= person.nextWalkTime) {
+        this.startWalking(person);
       }
 
       // Step walking
       if (person.walking) {
         person.walk(timeDelta);
-
-        // Update cell
-        const oldCell = person.cell;
-        person.cell = this.getCellFor(person);
-        if (person.cell !== oldCell) {
-          // Remove old cell, filter yourself out of it
-          this.grid[oldCell] = this.grid[oldCell].filter(personInCell => personInCell !== person);
-
-          // Add to new cell
-          this.grid[person.cell].push(person);
+        if (!person.walking) {
+          person.nextWalkTime = endTime + getRandomEventDelay(this.walksPerDay);
+        }
+        if (!person.immune) {
+          this.updatePersonCell(person);
         }
       }
 
       // Advance all infected people's status
       if (person.infected) {
-        person.infectionDay += timeDelta / SECONDS_IN_DAY;
+        person.infectionDay += daysPerStep;
 
-        if (person.infectionDay > (this.incubationPeriod + this.symptomaticPeriod)) {
+        if (person.infectionDay > this.infectiousPeriod) {
           // person has recovered
           person.infected = false;
           person.recovered = true;
+          this.activeInfections -= 1;
         } else if (person.infectionDay > this.incubationPeriod) {
           // person is symptomatic, they might die
-          const dead = getRandomCoinFlip(person.vulnerable ? vulnerableDeathProbability : nonVulnerableDeathProbability);
-          if (dead) {
+          if (!person.deathScheduled) {
+            person.deathScheduled = true;
+            const deathRate = person.vulnerable ? this.vulnerableDeathRate : this.nonVulnerableDeathRate;
+            person.nextDeathTime = endTime + getRandomEventDelay(deathRate / this.symptomaticPeriod);
+          }
+          if (endTime >= person.nextDeathTime) {
             person.dead = true;
             person.walking = false;
             person.infected = false;
+            this.activeInfections -= 1;
+            this.removePersonFromCell(person);
           }
         }
       }
 
       // Detect all collisions and new infections!
-      if (person.walking) {
-        for (var neighbour of this.neighbours) {
-          const potentialCell = person.cell + neighbour;
-          if (potentialCell < 0 || potentialCell >= this.gridSize) {
-            continue;
-          }
+      if (person.walking && !person.immune) {
+        this.detectInfections(person);
+      }
+    }
 
-          for (var neighbourPerson of this.grid[potentialCell]) {
-            if (person.infected && !neighbourPerson.infected && !neighbourPerson.recovered) {
-              this.collision(person, neighbourPerson);
-            } else if (!person.infected && !person.recovered && neighbourPerson.infected && !neighbourPerson.recovered) {
-              if (this.collision(neighbourPerson, person)) {
-                continue mainLoop;
-              }
-            }
+    this.time = endTime;
+  }
+
+  detectInfections(person) {
+    const neighbours = this.neighbours;
+    for (var n = 0; n < neighbours.length; n++) {
+      const potentialCell = person.cell + neighbours[n];
+      if (potentialCell < 0 || potentialCell >= this.gridSize) {
+        continue;
+      }
+
+      const cell = this.grid[potentialCell];
+      for (var c = 0; c < cell.length; c++) {
+        const neighbourPerson = cell[c];
+        if (person.infected) {
+          if (!neighbourPerson.infected && !neighbourPerson.recovered) {
+            this.collision(person, neighbourPerson);
+          }
+        } else if (!person.recovered && neighbourPerson.infected) {
+          if (this.collision(neighbourPerson, person)) {
+            return;
           }
         }
       }
     }
-
-    this.time += timeDelta;
   }
 
   collision(infector, infectee) {
-    if (infectee.immune)
-      return false;
-
     const a = infector.gridX;
     const b = infector.gridY;
     const c = infectee.gridX;
@@ -228,6 +303,7 @@ class CovidSimulator {
     if (distance <= this.infectionDistanceSquared) {
       infector.numberInfected += 1;
       infectee.infected = true;
+      this.activeInfections += 1;
       return true;
     }
     return false;
@@ -239,124 +315,122 @@ class CovidSimulator {
 
   draw() {
     this.clear();
-    const heightRatio = this.canvasHeight / this.sideLength;
-    const widthRatio = this.canvasWidth / this.sideLength;
+    const buckets = this.drawBuckets;
+    const people = this.people;
+    const radius = this.circleRadius;
 
-    for (var i = 0; i < this.people.length; i++) {
-      const person = this.people[i];
+    // One path and one fill per colour, instead of one per person
+    for (var b = 0; b < buckets.length; b++) {
+      buckets[b].length = 0;
+    }
+    for (var i = 0; i < people.length; i++) {
+      const person = people[i];
+      buckets[this.drawBucketIndex[person.fillStyle()]].push(person);
+    }
+
+    for (var group = 0; group < buckets.length; group++) {
+      const bucket = buckets[group];
+      if (bucket.length === 0) {
+        continue;
+      }
       this.ctx.beginPath();
-      this.ctx.arc((person.x % this.sideLength) * widthRatio, (person.y % this.sideLength) * heightRatio, this.infectionDistance * widthRatio, 0, 2 * Math.PI);
-      this.ctx.fillStyle = person.fillStyle();
+      for (var p = 0; p < bucket.length; p++) {
+        const person = bucket[p];
+        const x = person.gridX * this.xScale;
+        const y = person.gridY * this.yScale;
+        // Without this, each arc would draw a line from the previous circle to this one
+        this.ctx.moveTo(x + radius, y);
+        this.ctx.arc(x, y, radius, 0, TWO_PI);
+      }
+      this.ctx.fillStyle = DRAW_COLORS[group];
       this.ctx.fill();
+    }
+  }
+
+  collectStats() {
+    const counts = this.statsCounts;
+    const people = this.people;
+    for (var i = 0; i < counts.length; i++) {
+      counts[i] = 0;
+    }
+
+    let infectedEver = 0;
+    let infections = 0;
+    for (var p = 0; p < people.length; p++) {
+      const person = people[p];
+      counts[COLOR_INDEX[person.fillStyle()]] += 1;
+      if (person.infected || person.recovered) {
+        infectedEver += 1;
+        infections += person.numberInfected;
+      }
+    }
+
+    this.statsInfectedEver = infectedEver;
+    this.statsInfections = infections;
+    return counts;
+  }
+
+  // Chart.js redraws every point it holds, so widen the sampling stride to keep long runs bounded
+  recordGraphPoint(time, counts) {
+    this.graphSampleCount += 1;
+    if (this.graphSampleCount % this.graphSampleStride !== 0) {
+      return;
+    }
+
+    const datasets = this.graph.data.datasets;
+    for (var i = 0; i < datasets.length; i++) {
+      datasets[i].data.push({ x: time, y: counts[i] });
+    }
+    if (datasets[0].data.length < MAX_GRAPH_POINTS) {
+      return;
+    }
+
+    // Halve the history in place, keeping the first point of each pair
+    this.graphSampleStride *= 2;
+    for (var d = 0; d < datasets.length; d++) {
+      const data = datasets[d].data;
+      var kept = 0;
+      for (var point = 0; point < data.length; point += 2) {
+        data[kept] = data[point];
+        kept += 1;
+      }
+      data.length = kept;
     }
   }
 
   drawStats(steps, startTime) {
     const time = this.time / SECONDS_IN_DAY;
-    this.timeTotal.innerHTML = time.toFixed(3);
-    const grouped = groupByFunc(this.people, 'fillStyle');
-    const stats = [
-      (grouped[NON_VULNERABLE_COLOR] || []).length,
-      (grouped[VULNERABLE_COLOR] || []).length,
-      (grouped[ASYMPTOMATIC_COLOR] || []).length,
-      (grouped[SYMPTOMATIC_COLOR] || []).length,
-      (grouped[RECOVERED_COLOR] || []).length,
-      (grouped[DEAD_COLOR] || []).length,
-      (grouped[IMMUNE_COLOR] || []).length,
-    ];
-
-    const haveBeenInfected = this.people.filter(person => person.infected || person.recovered);
-    const avgNumberOfInfections = haveBeenInfected.length === 0 ? 0 : haveBeenInfected.reduce((memo, person) => memo + person.numberInfected, 0) / haveBeenInfected.length;
+    const counts = this.collectStats();
+    const avgNumberOfInfections = this.statsInfectedEver === 0 ? 0 : this.statsInfections / this.statsInfectedEver;
     const speed = (steps && startTime) ? steps / ((new Date().getTime() - startTime) / 1000) : 0;
 
-    this.nonVulnerableTotal.innerHTML = stats[0];
-    this.vulnerableTotal.innerHTML = stats[1];
-    this.asymptomaticTotal.innerHTML = stats[2];
-    this.symptomaticTotal.innerHTML = stats[3];
-    this.recoveredTotal.innerHTML = stats[4];
-    this.deadTotal.innerHTML = stats[5];
-    this.immuneTotal.innerHTML = stats[6];
+    this.timeTotal.innerHTML = time.toFixed(3);
+    for (var i = 0; i < this.statTotals.length; i++) {
+      this.statTotals[i].innerHTML = counts[i];
+    }
     this.rTotal.innerHTML = avgNumberOfInfections.toFixed(3);
-    this.immuneTotal.innerHTML = stats[6];
     this.speedTotal.innerHTML = speed.toFixed(1);
 
-
-    this.graph.data.datasets.forEach((dataset, i) => {
-      dataset.data.push({x: time, y: stats[i]});
-    });
-
+    this.recordGraphPoint(time, counts);
     this.graph.update(0);
   }
 
   setupGraph() {
+    const datasets = STATE_COLORS.map((color, index) => {
+      return {
+        label: STATE_LABELS[index],
+        borderColor: color,
+        backgroundColor: color,
+        data: [],
+        showLine: true,
+        fill: false,
+        pointRadius: 0,
+      };
+    });
     const graphConfig = {
       type: 'scatter',
       data: {
-        datasets: [
-          {
-            label: 'Non-Vulnerable',
-            borderColor: NON_VULNERABLE_COLOR,
-            backgroundColor: NON_VULNERABLE_COLOR,
-            data: [],
-            showLine: true,
-            fill: false,
-            pointRadius: 0,
-          },
-          {
-            label: 'Vulnerable',
-            borderColor: VULNERABLE_COLOR,
-            backgroundColor: VULNERABLE_COLOR,
-            data: [],
-            showLine: true,
-            fill: false,
-            pointRadius: 0,
-          },
-          {
-            label: 'Asymptomatic',
-            borderColor: ASYMPTOMATIC_COLOR,
-            backgroundColor: ASYMPTOMATIC_COLOR,
-            data: [],
-            showLine: true,
-            fill: false,
-            pointRadius: 0,
-          },
-          {
-            label: 'Symptomatic',
-            borderColor: SYMPTOMATIC_COLOR,
-            backgroundColor: SYMPTOMATIC_COLOR,
-            data: [],
-            showLine: true,
-            fill: false,
-            pointRadius: 0,
-          },
-          {
-            label: 'Recovered',
-            borderColor: RECOVERED_COLOR,
-            backgroundColor: RECOVERED_COLOR,
-            data: [],
-            showLine: true,
-            fill: false,
-            pointRadius: 0,
-          },
-          {
-            label: 'Dead',
-            borderColor: DEAD_COLOR,
-            backgroundColor: DEAD_COLOR,
-            data: [],
-            showLine: true,
-            fill: false,
-            pointRadius: 0,
-          },
-          {
-            label: 'Immune',
-            borderColor: IMMUNE_COLOR,
-            backgroundColor: IMMUNE_COLOR,
-            data: [],
-            showLine: true,
-            fill: false,
-            pointRadius: 0,
-          },
-        ]
+        datasets: datasets,
       },
       options: {
         responsive: true,
@@ -390,18 +464,19 @@ class CovidSimulator {
     this.graph = new Chart(this.graphCtx, graphConfig);
   }
 
+  // Counted on infection, recovery and death, so ending a run does not scan the population
   isDone() {
-    const grouped = groupByFunc(this.people, 'fillStyle');
-    return (grouped[ASYMPTOMATIC_COLOR] || []).length === 0 && (grouped[SYMPTOMATIC_COLOR] || []).length === 0;
+    return this.activeInfections === 0;
   }
 }
 
 class CovidPerson {
   constructor(x, y, sideLength, vulnerable, immune, moving, infected, incubationPeriod, symptomaticPeriod, infectionDay=0, recovered=false, dead=false, walking=false, walkTarget=[0, 0]) {
-    // x and y can be out of bounds, use .gridX or .gridY for inbounds
+    // x and y can be out of bounds, .gridX and .gridY are their in bounds form
     this.x = x;
     this.y = y;
     this.sideLength = sideLength;
+    this.setGridPosition();
     this.vulnerable = vulnerable;
     this.immune = immune;
     this.moving = moving;
@@ -414,6 +489,11 @@ class CovidPerson {
     this.walking = walking;
     this.walkTarget = walkTarget;
     this.numberInfected = 0;
+    // Walks and deaths are scheduled at a simulation time instead of rolled every step
+    this.cell = -1;
+    this.nextWalkTime = Infinity;
+    this.nextDeathTime = Infinity;
+    this.deathScheduled = false;
   }
 
   fillStyle() {
@@ -439,48 +519,36 @@ class CovidPerson {
     return NON_VULNERABLE_COLOR;
   }
 
+  setGridPosition() {
+    // Cached so collisions and cell lookups do not recompute it on every use
+    this.gridX = Math.abs(this.x % this.sideLength);
+    this.gridY = Math.abs(this.y % this.sideLength);
+  }
+
   walk(timeDelta) {
     // walk towards target using straight line
     if (!this.walking) return;
-    const totalVector = [
-      (this.walkTarget[0] - this.x),
-      (this.walkTarget[1] - this.y),
-    ];
+    const targetX = this.walkTarget[0] - this.x;
+    const targetY = this.walkTarget[1] - this.y;
+    const distanceSquared = targetX * targetX + targetY * targetY;
 
-    const magnitude = Math.sqrt(Math.pow(totalVector[0], 2) + Math.pow(totalVector[1], 2));
     // This stops the person from walking when they reach their target
-    if (magnitude <= WALK_TARGET_THRESHOLD) {
+    if (distanceSquared <= WALK_TARGET_THRESHOLD_SQUARED) {
       this.walking = false;
       return;
     }
 
-    const unitVector = [
-      totalVector[0] / magnitude,
-      totalVector[1] / magnitude,
-    ];
-    const deltaVector = [
-      unitVector[0] * PERSON_SPEED * timeDelta,
-      unitVector[1] * PERSON_SPEED * timeDelta,
-    ];
-
-    if (Math.abs(deltaVector[0]) > Math.abs(totalVector[0])) {
-      deltaVector[0] = totalVector[0];
+    const stepLength = PERSON_SPEED * timeDelta;
+    if (stepLength * stepLength >= distanceSquared) {
+      // Walking past the target is the same as walking exactly onto it
+      this.x += targetX;
+      this.y += targetY;
+    } else {
+      const scale = stepLength / Math.sqrt(distanceSquared);
+      this.x += targetX * scale;
+      this.y += targetY * scale;
     }
-
-    if (Math.abs(deltaVector[1]) > Math.abs(totalVector[1])) {
-      deltaVector[1] = totalVector[1];
-    }
-
-    this.x += deltaVector[0];
-    this.y += deltaVector[1];
-  }
-
-  get gridX() {
-    return Math.abs(this.x % this.sideLength);
-  }
-
-  get gridY() {
-    return Math.abs(this.y % this.sideLength);
+    this.setGridPosition();
   }
 }
 
@@ -499,6 +567,20 @@ function setDisabled(key, value) {
   } else {
     BUTTONS[key].disabled = value;
   }
+}
+
+// The play interval asks for more frames than a display shows, so queue at most one draw per animation frame
+let drawRequested = false;
+
+function requestDraw() {
+  if (drawRequested || !window.sim) {
+    return;
+  }
+  drawRequested = true;
+  window.requestAnimationFrame(function () {
+    drawRequested = false;
+    window.sim.draw();
+  });
 }
 
 function covidSetup(event) {
@@ -530,7 +612,7 @@ function covidSetup(event) {
 
 function covidStep(event) {
   window.sim.step(STEP_DELTA);
-  window.sim.draw();
+  requestDraw();
   window.sim.drawStats();
   event.preventDefault();
 }
@@ -557,7 +639,7 @@ function covidPlay(event, speed) {
       window.sim.step(STEP_DELTA);
     }
     steps += speed;
-    window.sim.draw();
+    requestDraw();
 
     if (window.sim.isDone()) {
       covidStop(event);
